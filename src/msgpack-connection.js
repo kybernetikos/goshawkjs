@@ -1,3 +1,7 @@
+const msgpack = require('../lib/msgpack.min')
+const WebSocket = require('ws')
+const fs = require('fs')
+
 class MsgpackConnection {
 	constructor(url) {
 		this.url = url
@@ -12,12 +16,12 @@ class MsgpackConnection {
 		this.onError = null
 	}
 
-	connect(onMessage, onEnd, onOpen) {
+	connect(onMessage, onEnd, onOpen, connectionOptions) {
 		this.onMessage = onMessage
 		this.onEnd = onEnd
 		this.onOpen = onOpen
 
-		const websocket = this.websocket = new WebSocket(this.url)
+		const websocket = this.websocket = new WebSocket(this.url, undefined, connectionOptions)
 		websocket.binaryType = 'arraybuffer'
 		websocket.onopen = (evt) => {
 			console.debug("Connection Open", evt)
@@ -51,7 +55,6 @@ class MsgpackConnection {
 				this.onMessage(data)
 			}
 		}
-		this.websocket = websocket
 	}
 
 	request(message) {
@@ -78,3 +81,5 @@ class MsgpackConnection {
 		this.websocket.send(msgpack.encode(message, this.options))
 	}
 }
+
+module.exports = MsgpackConnection

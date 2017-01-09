@@ -1,3 +1,5 @@
+const {binaryToHex} = require('./utils')
+
 class Uint64 {
 	constructor(uintArray = new Uint8Array(8)) {
 		if (uintArray instanceof Uint8Array === false) {
@@ -52,3 +54,5 @@ class Uint64 {
 		return binaryToHex(this.data)
 	}
 }
+
+module.exports = Uint64

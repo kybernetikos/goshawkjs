@@ -1,3 +1,8 @@
+const {binaryToHex} = require('./utils')
+const {TransactionRetryNeeded} = require('./errors')
+const Uint64 = require('./uint64')
+const Ref = require('./ref')
+
 class ObjectCache {
 	constructor() {
 		this.objects = new Map()
@@ -23,6 +28,8 @@ class ObjectCache {
 		return new CopyCache(this)
 	}
 }
+
+module.exports = ObjectCache
 
 class ObjectCacheEntry {
 	constructor(id) {

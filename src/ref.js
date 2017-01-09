@@ -1,3 +1,5 @@
+const {binaryToHex} = require('./utils')
+
 class Ref {
 	constructor(/*Uint8Array*/ varId, read, write) {
 		if (varId instanceof Uint8Array == false) {
@@ -34,3 +36,5 @@ class Ref {
 		return `{Ref ${binaryToHex(this.varId)} ${this.read ? 'r' : '-'}${this.write ? 'w' : '-'}}`
 	}
 }
+
+module.exports = Ref

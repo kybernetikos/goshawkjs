@@ -1,3 +1,6 @@
+const Ref = require('./ref')
+const {TransactionRetryNeeded} = require('./errors')
+
 class Transaction {
 	constructor(connection, txnFn, onSuccess, onFail) {
 		this.onSuccess = onSuccess;
@@ -61,3 +64,5 @@ class Transaction {
 		}
 	}
 }
+
+module.exports = Transaction

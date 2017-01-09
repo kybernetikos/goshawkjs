@@ -1,3 +1,11 @@
+const MsgpackConnection = require('./msgpack-connection')
+const Uint64 = require('./uint64')
+const Transaction = require('./transaction')
+const Ref = require('./ref')
+const {TransactionRetryNeeded} = require('./errors')
+const ObjectCache = require('./objectcache')
+const {binaryToHex} = require('./utils')
+
 class GosConnection {
 	constructor(url) {
 		this.link = new MsgpackConnection(url)
@@ -21,7 +29,7 @@ class GosConnection {
 		})
 	}
 
-	connect() {
+	connect(connectionOptions) {
 		const serverHelloHandler = (message) => {
 			this.serverInfo = message
 			this.messageHandler = rootsHandler
@@ -52,7 +60,8 @@ class GosConnection {
 					}
 				},
 				reject,
-				() => this.link.send(this.clientInfo)
+				() => this.link.send(this.clientInfo),
+				connectionOptions
 			)
 		})
 	}
@@ -146,3 +155,5 @@ class GosConnection {
 		}
 	}
 }
+
+module.exports = GosConnection
