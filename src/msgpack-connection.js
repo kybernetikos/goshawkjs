@@ -1,6 +1,5 @@
 const msgpack = require('../lib/msgpack.min')
 const WebSocket = require('ws')
-const fs = require('fs')
 
 class MsgpackConnection {
 	constructor(url) {

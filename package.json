@@ -2,9 +2,11 @@
   "name": "goshawkjs",
   "version": "0.1.0",
   "description": "a javascript client for goshawkjs",
-  "main": "index.js",
+  "main": "./index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "webpack",
+    "start": "webpack-dev-server"
   },
   "repository": {
     "type": "git",
@@ -26,5 +28,9 @@
   "homepage": "https://github.com/kybernetikos/goshawkjs#readme",
   "dependencies": {
     "ws": "^1.1.1"
+  },
+  "devDependencies": {
+    "webpack": "^2.2.0-rc.3",
+    "webpack-dev-server": "^1.16.2"
   }
 }

@@ -7,17 +7,16 @@
 </head>
 <body>
 GoshawkJS Test Page.  Open the console.
-<script type="text/javascript" src="src/utils.js"></script>
-<script type="text/javascript" src="src/errors.js"></script>
-<script type="text/javascript" src="src/objectcache.js"></script>
-<script type="text/javascript" src="src/msgpack-connection.js"></script>
-<script type="text/javascript" src="src/gos-connection.js"></script>
-<script type="text/javascript" src="src/ref.js"></script>
-<script type="text/javascript" src="src/uint64.js"></script>
-<script type="text/javascript" src="src/transaction.js"></script>
-<script type="text/javascript" src="src/goshawk.js"></script>
+
+<script type="text/javascript" src="dist/goshawkdb.browser.js"></script>
 
 <script language="javascript" type="text/javascript">
+	function binaryToHex(arraybuffer) {
+		if (arraybuffer instanceof ArrayBuffer) {
+			arraybuffer = new Uint8Array(arraybuffer)
+		}
+		return "0x" + Array.from(arraybuffer).map((x) => ('0' + x.toString(16)).substr(-2)).join("")
+	}
 
 	// todo:
 	//		nested transactions
@@ -25,7 +24,7 @@ GoshawkJS Test Page.  Open the console.
 	//		ref.read / ref.write ? (requires connection.currentTransaction access probably)
 	//		future: cancel retry
 
-	Goshawk.connect("wss://localhost:9999/ws").then((connection) => {
+	goshawkjs.connect("wss://localhost:9999/ws").then((connection) => {
 		connection.transact((txn) => {
 			const myRootRef = txn.roots['myRoot']
 			const root = txn.read(myRootRef)
