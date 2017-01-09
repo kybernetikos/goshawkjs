@@ -3,8 +3,8 @@ if (process.stdout.isTTY) {
 	require('util').inspect.defaultOptions.colors = true
 }
 
-const Goshawk = require('.')
-const {binaryToHex} = require('./src/utils')
+const goshawkjs = require('..')
+const {binaryToHex} = require('../src/utils')
 
 const connectionOptions = {
 	rejectUnauthorized: false,
@@ -27,7 +27,7 @@ JFKaKVqAWufHF0RQXEQdUX90yZfiWK/XgQ==
 -----END EC PRIVATE KEY-----`
 }
 
-Goshawk.connect("wss://localhost:9999/ws", connectionOptions).then((connection) => {
+goshawkjs.connect("wss://localhost:9999/ws", connectionOptions).then((connection) => {
 	connection.transact((txn) => {
 		const myRootRef = txn.roots['myRoot']
 		const root = txn.read(myRootRef)

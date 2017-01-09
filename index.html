@@ -1,40 +1,5 @@
-<!DOCTYPE html>
 <html>
-<head>
-	<meta charset="utf-8" />
-	<title>GoshawkJS Test Page</title>
-	<script src="lib/msgpack.min.js"></script>
-</head>
 <body>
-GoshawkJS Test Page.  Open the console.
-
-<script type="text/javascript" src="dist/goshawkdb.browser.js"></script>
-
-<script language="javascript" type="text/javascript">
-	function binaryToHex(arraybuffer) {
-		if (arraybuffer instanceof ArrayBuffer) {
-			arraybuffer = new Uint8Array(arraybuffer)
-		}
-		return "0x" + Array.from(arraybuffer).map((x) => ('0' + x.toString(16)).substr(-2)).join("")
-	}
-
-	// todo:
-	//		nested transactions
-	//		future: cancel retry
-
-	goshawkjs.connect("wss://localhost:9999/ws").then((connection) => {
-		connection.transact((txn) => {
-			const myRootRef = txn.roots['myRoot']
-			const root = txn.read(myRootRef)
-			const otherRef = root.refs[1]
-			const other = txn.read(otherRef)
-
-			console.log('other', binaryToHex(other.value))
-		}).then(
-			(x) => console.log('transaction committed', x), (e) => console.log('transaction failed', e)
-		)
-	})
-
-</script>
+For the goshawkjs web example, <a href="example">go here</a>.
 </body>
 </html>
