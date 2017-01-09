@@ -12,14 +12,6 @@ class Transaction {
 		this.cache = connection.cache.getTemporaryView()
 	}
 
-	resetCache() {
-		this.cache = this.connection.cache.getTemporaryView()
-	}
-
-	promoteCache(finalTxnId) {
-		this.cache.promote(finalTxnId)
-	}
-
 	read(ref) {
 		if (ref instanceof Ref == false) {
 			throw new Error("Can only read a Ref")
@@ -50,6 +42,20 @@ class Transaction {
 	retry() {
 		this.shouldRetry = true
 		throw new TransactionRetryNeeded("User called retry.")
+	}
+
+	transact(fn) {
+		return Promise.resolve(fn(this))
+	}
+
+	// private API
+
+	resetCache() {
+		this.cache = this.connection.cache.getTemporaryView()
+	}
+
+	promoteCache(finalTxnId) {
+		this.cache.promote(finalTxnId)
 	}
 
 	toMessage(txnId) {
