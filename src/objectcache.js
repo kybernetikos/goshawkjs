@@ -44,6 +44,24 @@ class ObjectCacheEntry {
 			refs: null
 		}
 
+		this.readOnlyData = Object.create({}, {
+			value: {
+				set: () => { throw new Error("Cannot set value without a transaction.write call.") },
+				get: () => { return this.data.value }
+			},
+			refs: {
+				set: () => { throw new Error("Cannot set references without a transaction.write call.") },
+				get: () => {
+					const srcRefs = this.data.refs
+					if (global.Proxy) {
+						return new Proxy(srcRefs, {set: () => {throw new Error("Cannot change references without a transaction.write call.")}})
+					} else {
+						return srcRefs.slice()
+					}
+				}
+			}
+		})
+
 		this.hasBeenWritten = false
 		this.hasBeenRead = false
 		this.hasBeenCreated = false
@@ -64,7 +82,7 @@ class ObjectCacheEntry {
 			this.hasBeenRead = true
 		}
 		if (this.hasBeenCreated || this.hasBeenWritten || this.version != null) {
-			return this.data
+			return this.readOnlyData
 		}
 
 		throw new TransactionRetryNeeded(`Object ${this.id} not present in cache`)
