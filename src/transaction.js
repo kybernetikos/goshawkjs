@@ -27,18 +27,24 @@ class Transaction {
 		if (ref instanceof Ref == false) {
 			throw new Error(`Can only write to a Ref, you tried to write to ${ref.toString()}.`)
 		}
-		const id = ref.varId
 		if (value instanceof Buffer) {
 			value = value.buffer.slice(value.offset, value.offset + value.length)
 		}
 		if (value instanceof ArrayBuffer === false && value.buffer && value.buffer instanceof ArrayBuffer) {
 			value = value.buffer
 		}
+		const id = ref.varId
 		const cacheEntry = this.cache.get(id)
 		cacheEntry.write(value, refs)
 	}
 
 	create(value, refs) {
+		if (value instanceof Buffer) {
+			value = value.buffer.slice(value.offset, value.offset + value.length)
+		}
+		if (value instanceof ArrayBuffer === false && value.buffer && value.buffer instanceof ArrayBuffer) {
+			value = value.buffer
+		}
 		const newId = this.connection.getNewObjectId()
 		const cacheEntry = this.cache.get(newId)
 		cacheEntry.create(value, refs)
