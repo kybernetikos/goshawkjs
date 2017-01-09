@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8" />
+	<title>GoshawkJS Test Page</title>
+	<script src="lib/msgpack.min.js"></script>
+</head>
+<body>
+GoshawkJS Test Page.  Open the console.
+<script type="text/javascript" src="src/utils.js"></script>
+<script type="text/javascript" src="src/errors.js"></script>
+<script type="text/javascript" src="src/objectcache.js"></script>
+<script type="text/javascript" src="src/msgpack-connection.js"></script>
+<script type="text/javascript" src="src/gos-connection.js"></script>
+<script type="text/javascript" src="src/ref.js"></script>
+<script type="text/javascript" src="src/uint64.js"></script>
+<script type="text/javascript" src="src/transaction.js"></script>
+<script type="text/javascript" src="src/goshawk.js"></script>
+
+<script language="javascript" type="text/javascript">
+
+	// todo:
+	//		nested transactions
+	//		node compatibility
+	//		ref.read / ref.write ? (requires connection.currentTransaction access probably)
+	//		future: cancel retry
+
+	Goshawk.connect("wss://localhost:9999/ws").then((connection) => {
+		connection.transact((txn) => {
+			const myRootRef = txn.roots['myRoot']
+			const root = txn.read(myRootRef)
+			const otherRef = root.refs[1]
+			const other = txn.read(otherRef)
+
+			console.log('other', binaryToHex(other.value))
+		}).then(
+			(x) => console.log('transaction committed', x), (e) => console.log('transaction failed', e)
+		)
+	})
+
+</script>
+</body>
+</html>
