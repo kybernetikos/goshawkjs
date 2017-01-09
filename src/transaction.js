@@ -33,7 +33,7 @@ class Transaction {
 
 	write(ref, value, refs) {
 		if (ref instanceof Ref == false) {
-			throw new Error("Can only read a Ref")
+			throw new Error("Can only write a Ref")
 		}
 		const id = ref.varId
 		const cacheEntry = this.cache.get(id)

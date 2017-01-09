@@ -1,6 +1,9 @@
 global.console.debug = global.console.log
+if (process.stdout.isTTY) {
+	require('util').inspect.defaultOptions.colors = true
+}
 
-const Goshawk = require('./index.js')
+const Goshawk = require('.')
 const {binaryToHex} = require('./src/utils')
 
 const connectionOptions = {

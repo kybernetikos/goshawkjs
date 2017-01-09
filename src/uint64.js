@@ -29,7 +29,10 @@ class Uint64 {
 		return this
 	}
 	clone() {
-		return new Uint64(this.data)
+		const dst = new ArrayBuffer(this.data.byteLength)
+		const uintArray = new Uint8Array(dst)
+		uintArray.set(this.data)
+		return new Uint64(uintArray)
 	}
 	set(...bytes) {
 		if (bytes[0] instanceof Uint64) {
