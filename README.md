@@ -26,3 +26,7 @@ To see the node example
 ```
 node example/node-example.js
 ```
+
+### todo
+
+* protect the output of `txn.read`
