@@ -14,18 +14,16 @@ class Transaction {
 
 	read(ref) {
 		if (ref instanceof Ref == false) {
-			throw new Error("Can only read a Ref")
+			throw new TypeError(`Can only read a Ref, you tried to read from ${ref.toString()}`)
 		}
 		const id = ref.varId
 		const cacheEntry = this.cache.get(id)
-		// will need to restrict what can be modified on this by
-		// those outside, or clone it or something.
 		return cacheEntry.read()
 	}
 
 	write(ref, value, refs) {
 		if (ref instanceof Ref == false) {
-			throw new Error(`Can only write to a Ref, you tried to write to ${ref.toString()}.`)
+			throw new TypeError(`Can only write to a Ref, you tried to write to ${ref.toString()}.`)
 		}
 		if (value instanceof Buffer) {
 			value = value.buffer.slice(value.offset, value.offset + value.length)

@@ -3,7 +3,7 @@ const {binaryToHex} = require('./utils')
 class Ref {
 	constructor(/*Uint8Array*/ varId, read, write) {
 		if (varId instanceof Uint8Array == false) {
-			throw new Error("var id must be a uint8 array")
+			throw new TypeError("var id must be a uint8 array")
 		}
 		this.varId = varId
 		this.read = read

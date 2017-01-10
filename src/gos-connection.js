@@ -23,6 +23,9 @@ class GosConnection {
 	}
 
 	transact(fn) {
+		if (fn instanceof Function === false) {
+			throw new TypeError("Transaction argument must be a function.")
+		}
 		return new Promise((resolve, reject) => {
 			this.transactions.push(new Transaction(this, fn, resolve, reject))
 			this.scheduleNextTransaction()

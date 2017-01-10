@@ -1,5 +1,5 @@
 const {binaryToHex} = require('./utils')
-const {TransactionRetryNeeded} = require('./errors')
+const {TransactionRetryNeeded, MutationNotAllowed} = require('./errors')
 const Uint64 = require('./uint64')
 const Ref = require('./ref')
 
@@ -34,7 +34,7 @@ module.exports = ObjectCache
 class ObjectCacheEntry {
 	constructor(id) {
 		if (id instanceof Uint8Array == false) {
-			throw new Error("id must be a uint8")
+			throw new TypeError("id must be a uint8")
 		}
 		this.id = id
 
@@ -46,15 +46,15 @@ class ObjectCacheEntry {
 
 		this.readOnlyData = Object.create({}, {
 			value: {
-				set: () => { throw new Error("Cannot set value without a transaction.write call.") },
+				set: () => { throw new MutationNotAllowed("Cannot set value without a transaction.write call.") },
 				get: () => { return this.data.value }
 			},
 			refs: {
-				set: () => { throw new Error("Cannot set references without a transaction.write call.") },
+				set: () => { throw new MutationNotAllowed("Cannot set references without a transaction.write call.") },
 				get: () => {
 					const srcRefs = this.data.refs
 					if (global.Proxy) {
-						return new Proxy(srcRefs, {set: () => {throw new Error("Cannot change references without a transaction.write call.")}})
+						return new Proxy(srcRefs, {set: () => {throw new MutationNotAllowed("Cannot change references without a transaction.write call.")}})
 					} else {
 						return srcRefs.slice()
 					}
@@ -69,7 +69,7 @@ class ObjectCacheEntry {
 
 	update(version, value, refs) {
 		if (value != null && value instanceof ArrayBuffer != true) {
-			throw new Error("values should be array buffers : " + value)
+			throw new TypeError("values should be array buffers : " + value)
 		}
 		ObjectCacheEntry.checkRefs(refs)
 		this.data.value = value
@@ -90,7 +90,7 @@ class ObjectCacheEntry {
 
 	write(value, refs) {
 		if (value instanceof ArrayBuffer != true) {
-			throw new Error("values should be array buffers : " + value)
+			throw new TypeError("values should be array buffers : " + value)
 		}
 		ObjectCacheEntry.checkRefs(refs)
 		if (!this.hasBeenCreated) {
@@ -102,7 +102,7 @@ class ObjectCacheEntry {
 
 	create(value, refs) {
 		if (value instanceof ArrayBuffer != true) {
-			throw new Error("values should be array buffers : " + value)
+			throw new TypeError("values should be array buffers : " + value)
 		}
 		ObjectCacheEntry.checkRefs(refs)
 		this.hasBeenCreated = true
@@ -111,9 +111,10 @@ class ObjectCacheEntry {
 	}
 
 	static checkRefs(refs) {
-		for (let ref of refs) {
-			if (ref instanceof Ref == false) {
-				throw new Error("Refs of wrong type")
+		for (let i = 0; i < refs.length; ++i) {
+			const ref = refs[i]
+			if (ref instanceof Ref === false) {
+				throw new TypeError(`Reference ${i} was not of reference type - was a ${ref.constructor.name} : ${ref.toString()}`)
 			}
 		}
 	}
