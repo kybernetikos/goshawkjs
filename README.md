@@ -116,17 +116,24 @@ goshawkjs.connect("wss://localhost:9999/ws").then((connection) => {
 
 ### Connection API
 
-A connection allows you to submit transactions.
+A connection allows you to submit transactions.  Only one transaction is ever active at a time, calling `transact` while
+another transaction is active will cause your new transaction to be queued.
 
 ```js
-connection.transact((txn) => {
+const promiseOfSomething = connection.transact((txn) => {
 
 	// transaction code
 
+    return something
 })
 ```
 
 ### Transaction API
+
+**NOTE**: code submitted to `.transact` may be run by the system multiple times. Avoid making side effecting changes
+from inside a transaction.  The goshawkjs library uses exceptions to stop execution when there is a cache miss and it
+needs to request values from the server.  If you use try catch around transaction methods and you want this behaviour
+to work, you will need to rethrow any exceptions with a name of `TransactionRetryNeeded` that you inadvertantly catch.
 
 Inside a transaction you can access references to the configured root objects:
 
@@ -161,3 +168,7 @@ const newRef = txn.create(Buffer.from("thing"), [])
 
 Make sure you add the reference to an object before the end of the transaction or you won't 
 be able to access it in the future.
+
+If you want to be notified when something changes, you can create a transaction that reads the values you're interested
+in and then calls `txn.retry()`.  This will cause the transaction to stop processing until the values change, at which
+point the transaction will be run again.
