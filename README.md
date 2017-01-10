@@ -1,15 +1,15 @@
 # goshawkjs
 
-GoshawkJS is a javascript client for goshawk.
+GoshawkJS is a javascript client for goshawkdb.
 
 ## Notes for getting Started
 
-Run a goshawk server with the config found in `example/env`.  See the [goshawk documentation](https://goshawkdb.io/documentation.html).
+Run a goshawkdb server with the config found in `example/env`.  See the [goshawkdb documentation](https://goshawkdb.io/documentation.html).
 
 When running in the browser, you'll need to import the certificates for your user.  You can 
 test that you've done this correctly by going to [https://localhost:9999/ws](https://localhost:9999/ws).  
 If it's working, it will say 'Bad Request' and you'll see that a connection occurred in the
-goshawk console.
+goshawkdb console.
 
 To see the web example
 
@@ -56,7 +56,7 @@ Get a goshawkjs reference and open a connection:
 ```js
 const goshawkjs = require('goshawkjs')
 
-// These will need to be for a user that your goshawk configuration allows.
+// These will need to be for a user that your goshawkdb configuration allows.
 // Check the .pem file you created for that user.
 const connectionOptions = {
 	rejectUnauthorized: false,
@@ -81,7 +81,7 @@ JFKaKVqAWufHF0RQXEQdUX90yZfiWK/XgQ==
 
 goshawkjs.connect("wss://localhost:9999/ws", connectionOptions).then((connection) => {
 
-    // this is where your goshawk code goes
+    // this is where your goshawkjs code goes
 
 })
 ```
@@ -93,7 +93,7 @@ and operating system support.
 
 Check that it has worked by navigating to [https://localhost:9999/ws](https://localhost:9999/ws).
 If it's working, it will say 'Bad Request' and you'll see that a connection occurred in the
-goshawk console.
+goshawkdb console.
 
 Include the client:
 
@@ -109,7 +109,7 @@ Now include your code, e.g.
 ```js
 goshawkjs.connect("wss://localhost:9999/ws").then((connection) => {
   
-    // this is where your goshawk code goes
+    // this is where your goshawkjs code goes
 
 })
 ```
