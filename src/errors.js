@@ -10,7 +10,9 @@ class Throwable extends Error {
 // Thrown when a transaction should be retried
 class TransactionRetryNeeded extends Throwable {}
 class MutationNotAllowed extends Throwable {}
+class CapabilityDenied extends Throwable {}
 
+exports.CapabilityDenied = CapabilityDenied
 exports.MutationNotAllowed = MutationNotAllowed
 exports.TransactionRetryNeeded = TransactionRetryNeeded
 exports.Throwable = Throwable

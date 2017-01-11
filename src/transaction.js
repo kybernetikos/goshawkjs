@@ -1,5 +1,5 @@
 const Ref = require('./ref')
-const {TransactionRetryNeeded} = require('./errors')
+const {TransactionRetryNeeded, CapabilityDenied} = require('./errors')
 
 class Transaction {
 	constructor(connection, txnFn, onSuccess, onFail) {
@@ -14,7 +14,10 @@ class Transaction {
 
 	read(ref) {
 		if (ref instanceof Ref == false) {
-			throw new TypeError(`Can only read a Ref, you tried to read from ${ref.toString()}`)
+			throw new TypeError(`Can only read a reference, you tried to read from ${ref.toString()}`)
+		}
+		if (!ref.read) {
+			throw new CapabilityDenied(`Unable to read using reference ${ref.toString()}, as it doesn't allow reads.`)
 		}
 		const id = ref.varId
 		const cacheEntry = this.cache.get(id)
@@ -24,6 +27,9 @@ class Transaction {
 	write(ref, value, refs) {
 		if (ref instanceof Ref == false) {
 			throw new TypeError(`Can only write to a Ref, you tried to write to ${ref.toString()}.`)
+		}
+		if (!ref.write) {
+			throw new CapabilityDenied(`Unable to write using reference ${ref.toString()}, as it doesn't allow writes.`)
 		}
 		if (value instanceof Buffer) {
 			value = value.buffer.slice(value.offset, value.offset + value.length)

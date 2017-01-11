@@ -18,6 +18,18 @@ class Ref {
 		return Ref.fromCapRef(msg.Capability, msg.VarId)
 	}
 
+	sameReferent(otherRef) {
+		return binaryToHex(this.varId) === binaryToHex(otherRef.varId)
+	}
+
+	denyRead() {
+		return new Ref(this.varId, false, this.write)
+	}
+
+	denyWrite() {
+		return new Ref(this.varId, this.read, false)
+	}
+
 	withCapabilities(read = this.read, write = this.write) {
 		if (read && ! this.read) {
 			throw new Error("Can't add read permission")
