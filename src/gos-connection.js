@@ -20,14 +20,20 @@ class GosConnection {
 		this.currentTransaction = null
 		this.cache = null
 		this.scheduledCallback = null
+		this.inTxnCode = false
 	}
 
 	transact(fn) {
 		if (fn instanceof Function === false) {
 			throw new TypeError("Transaction argument must be a function.")
 		}
+
+		if (this.inTxnCode) {
+			return this.currentTransaction.transact(fn)
+		}
+
 		return new Promise((resolve, reject) => {
-			this.transactions.push(new Transaction(this, fn, resolve, reject))
+			this.transactions.push(new Transaction(this, fn, resolve, reject, this.cache, this.namespace))
 			this.scheduleNextTransaction()
 		})
 	}
@@ -89,7 +95,7 @@ class GosConnection {
 			this.scheduleNextTransaction(true)
 		}
 		const retry = () => {
-			currentTransaction.resetCache()
+			currentTransaction.reset()
 			this.transactions.unshift(currentTransaction)
 			this.scheduleNextTransaction(true)
 		}
@@ -101,9 +107,12 @@ class GosConnection {
 		const txnIdWithNamespace = this.nextTransactionId.concat(this.namespace)
 		let transactionResult = null
 		try {
+			this.inTxnCode = true
 			transactionResult = currentTransaction.fn(currentTransaction)
+			this.inTxnCode = false
 		} catch (e) {
-			if (e instanceof TransactionRetryNeeded == false) {
+			this.inTxnCode = false
+			if (e instanceof TransactionRetryNeeded === false) {
 				fail(e)
 				return
 			}

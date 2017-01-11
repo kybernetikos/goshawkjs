@@ -34,7 +34,7 @@ module.exports = ObjectCache
 class ObjectCacheEntry {
 	constructor(id) {
 		if (id instanceof Uint8Array == false) {
-			throw new TypeError("id must be a uint8")
+			throw new TypeError("id must be a uint8, was " + id.toString())
 		}
 		this.id = id
 
@@ -120,14 +120,17 @@ class ObjectCacheEntry {
 	}
 
 	clone() {
-		const result = new ObjectCacheEntry(this.id)
-		result.version = this.version
-		result.data.value = this.data.value
-		result.data.refs = this.data.refs
-		result.hasBeenRead = this.hasBeenRead
-		result.hasBeenWritten = this.hasBeenWritten
-		result.hasBeenCreated = this.hasBeenCreated
-		return result
+		return new ObjectCacheEntry(this.id).copyFrom(this)
+	}
+
+	copyFrom(otherEntry) {
+		this.version = otherEntry.version
+		this.data.value = otherEntry.data.value
+		this.data.refs = otherEntry.data.refs
+		this.hasBeenRead = otherEntry.hasBeenRead
+		this.hasBeenWritten = otherEntry.hasBeenWritten
+		this.hasBeenCreated = otherEntry.hasBeenCreated
+		return this
 	}
 
 	toAction(initialVersion) {
@@ -166,8 +169,14 @@ class CopyCache {
 
 	promote(finalTxnId) {
 		for (let [, entry] of this.objects) {
-			if (entry.hasBeenCreated || entry.hasBeenWritten) {
-				this.parentCache.get(entry.id).update(finalTxnId, entry.data.value, entry.data.refs)
+			const parentEntry = this.parentCache.get(entry.id)
+			if (finalTxnId) {
+				// if we are given a transaction id, then this promotion should be treated like a cache update from the server.
+				if (entry.hasBeenCreated || entry.hasBeenWritten) {
+					parentEntry.update(finalTxnId, entry.data.value, entry.data.refs)
+				}
+			} else {
+				parentEntry.copyFrom(entry)
 			}
 		}
 	}
@@ -177,9 +186,15 @@ class CopyCache {
 		const initialVersion = Uint64.from(0, 0, 0, 0, 0, 0, 0, 0).concat(namespace)
 
 		for (let [,cacheEntry] of this.objects) {
-			actions.push(cacheEntry.toAction(initialVersion))
+			if (cacheEntry.hasBeenRead || cacheEntry.hasBeenWritten || cacheEntry.hasBeenCreated) {
+				actions.push(cacheEntry.toAction(initialVersion))
+			}
 		}
 
 		return actions
+	}
+
+	getTemporaryView() {
+		return new CopyCache(this)
 	}
 }

@@ -25,22 +25,22 @@ class MsgpackConnection {
 		websocket.onopen = (evt) => {
 			console.debug("Connection Open", evt)
 			if (this.onOpen) {
-				this.onOpen()
+				this.onOpen(evt)
 			}
 		}
 		websocket.onclose = (evt) => {
 			console.debug("Connection Closed", evt)
 			if (this.onEnd) {
-				this.onEnd()
+				this.onEnd(evt)
 			}
 			if (this.onClose) {
-				this.onClose()
+				this.onClose(evt)
 			}
 		}
 		websocket.onerror = (evt) => {
 			console.error("Connection Error", evt)
 			if (this.onEnd) {
-				this.onEnd()
+				this.onEnd(evt)
 			}
 			if (this.onError) {
 				this.onError(evt)

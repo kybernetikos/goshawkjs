@@ -7,9 +7,8 @@ GoshawkJS is a javascript client for goshawkdb.
 Run a goshawkdb server with the config found in `example/env`.  See the [goshawkdb documentation](https://goshawkdb.io/documentation.html).
 
 When running in the browser, you'll need to import the certificates for your user.  You can 
-test that you've done this correctly by going to [https://localhost:9999/ws](https://localhost:9999/ws).  
-If it's working, it will say 'Bad Request' and you'll see that a connection occurred in the
-goshawkdb console.
+test that you've done this correctly by going to [https://localhost:9999/ws](https://localhost:9999/).  
+If it's working, it will say 'GoshawkDB Server version dev. Websocket available at /ws'.
 
 To see the web example
 
@@ -92,8 +91,7 @@ The configuration of keys and certificates must be done in whatever way your bro
 and operating system support.
 
 Check that it has worked by navigating to [https://localhost:9999/ws](https://localhost:9999/ws).
-If it's working, it will say 'Bad Request' and you'll see that a connection occurred in the
-goshawkdb console.
+If it's working, it will say 'GoshawkDB Server version dev. Websocket available at /ws'.
 
 Include the client:
 
@@ -166,9 +164,8 @@ You can create an object too with
 const newRef = txn.create(Buffer.from("thing"), [])
 ```
 
-Make sure you add the reference to an object before the end of the transaction or you won't 
-be able to access it in the future.
-
 If you want to be notified when something changes, you can create a transaction that reads the values you're interested
 in and then calls `txn.retry()`.  This will cause the transaction to stop processing until the values change, at which
 point the transaction will be run again.
+
+If you want to check that references point to the same object, you can do this with `if (ref.sameReferent(otherRef))`.
