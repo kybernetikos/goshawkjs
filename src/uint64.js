@@ -1,4 +1,4 @@
-const {binaryToHex} = require('./utils')
+const {binaryToHex, toArrayBuffer} = require('./utils')
 
 class Uint64 {
 	constructor(uintArray = new Uint8Array(8)) {
@@ -15,12 +15,12 @@ class Uint64 {
 		return result
 	}
 
-	static fromTypedArray(typedArray, byteOffset = 0) {
-		return Uint64.fromArrayBuffer(typedArray.buffer, byteOffset)
+	static fromBinary(binary) {
+		return Uint64.fromArrayBuffer(toArrayBuffer(binary))
 	}
 
 	static fromArrayBuffer(arrayBuffer, byteOffset = 0) {
-		return new Uint64(new Uint8Array(arrayBuffer, byteOffset, 8))
+		return new Uint64(new Uint8Array(arrayBuffer.slice(byteOffset, byteOffset + 8)))
 	}
 
 	inc() {

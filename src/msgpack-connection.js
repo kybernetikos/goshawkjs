@@ -23,13 +23,13 @@ class MsgpackConnection {
 		const websocket = this.websocket = new WebSocket(this.url, undefined, connectionOptions)
 		websocket.binaryType = 'arraybuffer'
 		websocket.onopen = (evt) => {
-			console.debug("Connection Open", evt)
+			console.debug("Connection Open")
 			if (this.onOpen) {
 				this.onOpen(evt)
 			}
 		}
 		websocket.onclose = (evt) => {
-			console.debug("Connection Closed", evt)
+			console.debug("Connection Closed", evt.code, evt.reason)
 			if (this.onEnd) {
 				this.onEnd(evt)
 			}
@@ -38,7 +38,7 @@ class MsgpackConnection {
 			}
 		}
 		websocket.onerror = (evt) => {
-			console.error("Connection Error", evt)
+			console.error("Connection Error", evt.code, evt.reason)
 			if (this.onEnd) {
 				this.onEnd(evt)
 			}

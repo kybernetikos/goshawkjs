@@ -1,4 +1,4 @@
-const {binaryToHex} = require('./utils')
+const {binaryToHex, toArrayBuffer} = require('./utils')
 const {TransactionRetryNeeded, MutationNotAllowed} = require('./errors')
 const Uint64 = require('./uint64')
 const Ref = require('./ref')
@@ -68,13 +68,11 @@ class ObjectCacheEntry {
 	}
 
 	update(version, value, refs) {
-		if (value != null && value instanceof ArrayBuffer != true) {
-			throw new TypeError("values should be array buffers : " + value)
-		}
+		value = toArrayBuffer(value)
 		ObjectCacheEntry.checkRefs(refs)
 		this.data.value = value
 		this.data.refs = refs
-		this.version = version
+		this.version = toArrayBuffer(version)
 	}
 
 	read() {
@@ -89,9 +87,7 @@ class ObjectCacheEntry {
 	}
 
 	write(value, refs) {
-		if (value instanceof ArrayBuffer != true) {
-			throw new TypeError("values should be array buffers : " + value)
-		}
+		value = toArrayBuffer(value)
 		ObjectCacheEntry.checkRefs(refs)
 		if (!this.hasBeenCreated) {
 			this.hasBeenWritten = true
@@ -137,7 +133,8 @@ class ObjectCacheEntry {
 		const result = {
 			VarId: this.id.buffer,
 		}
-		const refMessages = this.version ? this.data.refs.map((ref) => ref.toMessage()) : []
+		const refMessages = this.data.refs.map((ref) => ref.toMessage())
+
 		if (this.hasBeenRead && !this.hasBeenWritten) {
 			result.Read = {Version: this.version || initialVersion}
 		} else if (this.hasBeenWritten && !this.hasBeenRead) {

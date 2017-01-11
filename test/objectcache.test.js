@@ -1,5 +1,4 @@
 const test = require('ava')
-const assert = require('assert');
 const ObjectCache = require('../src/objectcache')
 const Ref = require('../src/ref')
 const {TransactionRetryNeeded, MutationNotAllowed} = require("../src/errors")
