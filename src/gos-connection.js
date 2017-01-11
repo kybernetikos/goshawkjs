@@ -75,6 +75,10 @@ class GosConnection {
 		})
 	}
 
+	close() {
+		this.link.close()
+	}
+
 	// private api
 
 	getNewObjectId() {
@@ -131,11 +135,11 @@ class GosConnection {
 				} else {
 					fail("Unknown response message " + JSON.stringify(outcome))
 				}
-			}, fail)
+			}).catch(fail)
 	}
 
 	updateFromTransactionResponse(response) {
-		this.nextTransactionId = Uint64.fromTypedArray(response.ClientTxnOutcome.FinalId).inc()
+		this.nextTransactionId = Uint64.fromBinary(response.ClientTxnOutcome.FinalId).inc()
 		if (response.ClientTxnOutcome.Abort) {
 			for (let update of response.ClientTxnOutcome.Abort) {
 				const otherTxnId = update.Version.buffer

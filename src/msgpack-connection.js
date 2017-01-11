@@ -79,6 +79,10 @@ class MsgpackConnection {
 		console.debug(">", message)
 		this.websocket.send(msgpack.encode(message, this.options))
 	}
+
+	close() {
+		this.websocket.close()
+	}
 }
 
 module.exports = MsgpackConnection

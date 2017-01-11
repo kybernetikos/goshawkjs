@@ -1,5 +1,5 @@
 const test = require('ava')
-const Uint64 = require('../src/uint64')
+const Uint64 = require('../../src/uint64')
 
 test("Check that I can increment a Uint64 loaded from a buffer", (t) => {
 	const a = Uint64.fromBinary(new Buffer([0, 0, 0, 0, 0, 0, 0, 4]))

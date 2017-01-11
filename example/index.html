@@ -10,26 +10,70 @@ GoshawkJS Test Page.  Open the console.
 <script type="text/javascript" src="../dist/goshawkdb.browser.js"></script>
 
 <script language="javascript" type="text/javascript">
-	function binaryToHex(arraybuffer) {
-		if (arraybuffer instanceof ArrayBuffer) {
-			arraybuffer = new Uint8Array(arraybuffer)
+	function stringToArrayBuffer(string) {
+		return new TextEncoder('utf-8').encode(string).buffer
+	}
+
+	function arrayBufferToString(arraybuffer) {
+		return new TextDecoder('utf-8').decode(arraybuffer)
+	}
+
+	function firstRoot(txn) {
+		for (let rootName in txn.roots) {
+			console.log("Found root", rootName)
+			return txn.roots[rootName]
 		}
-		return "0x" + Array.from(arraybuffer).map((x) => ('0' + x.toString(16)).substr(-2)).join("")
+		throw new Error("No roots.")
+	}
+
+	function ensureThrows(code, err) {
+		try {
+			code()
+			throw new Error("Missing exception : " + err.name + " in code " + code.toString())
+		} catch (e) {
+			if (e instanceof err == false) {
+				throw e
+			}
+		}
+	}
+
+	function assert(condition) {
+		if (!condition) {
+			throw new Error("Assertion failed")
+		}
+	}
+
+	function setup(txn) {
+		const root = firstRoot(txn)
+		const o1 = txn.create(stringToArrayBuffer("Hello World"), [])
+		txn.write(root, stringToArrayBuffer("root obj"), [o1.denyRead(), o1.denyWrite(), o1.denyRead().denyWrite()])
+	}
+
+	function test(txn) {
+		const root = firstRoot(txn)
+		const {value:rootValue, refs:rootRefs} = txn.read(root)
+		const noReadyRef = rootRefs[0]
+		const noWriteyRef = rootRefs[1]
+		const noAnythingRef = rootRefs[2]
+
+		ensureThrows(() => txn.read(noReadyRef), goshawkjs.errors.CapabilityDenied)
+
+		const {value:newReadValue, refs: newRefs} = txn.read(noWriteyRef)
+		assert(arrayBufferToString(newReadValue) === "Hello World")
+		console.log("New refs should be empty", newRefs)
+		ensureThrows(() => txn.write(noWriteyRef, stringToArrayBuffer("this shouldn't work"), []), goshawkjs.errors.CapabilityDenied)
+
+		ensureThrows(() => txn.read(noAnythingRef), goshawkjs.errors.CapabilityDenied)
+		ensureThrows(() => txn.write(noAnythingRef, stringToArrayBuffer("this shouldn't work"), []), goshawkjs.errors.CapabilityDenied)
 	}
 
 	goshawkjs.connect("wss://localhost:9999/ws").then((connection) => {
-		connection.transact((txn) => {
-			const myRootRef = txn.roots['myRoot']
-			const root = txn.read(myRootRef)
-			const otherRef = root.refs[1]
-			const other = txn.read(otherRef)
-
-			console.log('other', binaryToHex(other.value))
-		}).then(
-			(x) => console.log('transaction committed', x), (e) => console.log('transaction failed', e)
-		)
+		connection.transact(setup).then( () => {
+			return connection.transact(test)
+		}).then((x) => console.log('Transaction Committed', x), (e) => console.log('Transaction Failed', e))
+	}).catch((err) => {
+		console.log("Connection Failed", err)
 	})
-
 </script>
 </body>
 </html>

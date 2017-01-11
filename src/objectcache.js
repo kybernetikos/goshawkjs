@@ -133,7 +133,7 @@ class ObjectCacheEntry {
 		const result = {
 			VarId: this.id.buffer,
 		}
-		const refMessages = this.data.refs.map((ref) => ref.toMessage())
+		const refMessages = this.data.refs ? this.data.refs.map((ref) => ref.toMessage()) : []
 
 		if (this.hasBeenRead && !this.hasBeenWritten) {
 			result.Read = {Version: this.version || initialVersion}

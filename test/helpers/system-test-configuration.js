@@ -36,12 +36,6 @@ if (process.env.GOSHAWKDB_DEFAULT_CLIENT_KEYPAIR) {
 	clientKeyPath = process.env.GOSHAWKDB_DEFAULT_CLIENT_KEYPAIR
 }
 
-// Commonl
-// GOSHAWKDB_CLUSTER_CERT=/Users/ileyada/dev/jsgos/src/goshawkdb.io/server/cmd/goshawkdb/defaultEnv/clusterCert.pem;
-// GOSHAWKDB_DEFAULT_CLUSTER_HOSTS=localhost:7894;
-// GOSHAWKDB_DEFAULT_CLIENT_KEYPAIR=/Users/ileyada/dev/jsgos/src/goshawkdb.io/server/cmd/goshawkdb/defaultEnv/user1.pem;
-// GOSHAWKDB_ROOT_NAME=myRoot
-
 let clusterHosts = process.env.GOSHAWKDB_DEFAULT_CLUSTER_HOSTS || "localhost:7894;"
 const firstHost = clusterHosts.substring(0, clusterHosts.indexOf(':'))
 

@@ -1,8 +1,7 @@
 const test = require('ava')
-const ObjectCache = require('../src/objectcache')
-const Ref = require('../src/ref')
-const {TransactionRetryNeeded, MutationNotAllowed} = require("../src/errors")
-
+const ObjectCache = require('../../src/objectcache')
+const Ref = require('../../src/ref')
+const {TransactionRetryNeeded, MutationNotAllowed} = require("../../src/errors")
 
 const id1 = new Uint8Array(10)
 const testValue = new Uint8Array(5).buffer
@@ -84,6 +83,6 @@ test("ObjectCache#getTemporaryView allows reads if the value has been cached, an
 	const actions = view.getActions(dummyTxnId)
 	t.deepEqual(actions, [{
 		VarId: id1.buffer,
-		Read: { Version: v0}
+		Read: { Version: v0.buffer}
 	}])
 })

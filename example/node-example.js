@@ -1,10 +1,4 @@
-global.console.debug = global.console.log
-if (process.stdout.isTTY) {
-	require('util').inspect.defaultOptions.colors = true
-}
-
 const goshawkjs = require('..')
-const {binaryToHex} = require('../src/utils')
 
 const connectionOptions = {
 	rejectUnauthorized: false,
@@ -28,14 +22,18 @@ JFKaKVqAWufHF0RQXEQdUX90yZfiWK/XgQ==
 }
 
 goshawkjs.connect("wss://localhost:9999/ws", connectionOptions).then((connection) => {
-	connection.transact((txn) => {
+	return connection.transact((txn) => {
 		const myRootRef = txn.roots['myRoot']
 		const root = txn.read(myRootRef)
-		const otherRef = root.refs[1]
-		const other = txn.read(otherRef)
-
-		console.log('other', binaryToHex(other.value))
+		console.log("myRoot contains", root.value, root.refs)
+		txn.write(myRootRef, Buffer.from("Boo!"), root.refs)
 	}).then(
-		(x) => console.log('transaction committed', x), (e) => console.log('transaction failed', e)
+		() => {
+			console.log('transaction committed')
+			connection.close()
+		}, (e) => {
+			console.log('transaction failed because', e)
+			connection.close()
+		}
 	)
-})
+}).then(() => console.log('done'), (err) => {console.error('connection problem', err)})
