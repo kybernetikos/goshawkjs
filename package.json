@@ -4,7 +4,7 @@
   "description": "a javascript client for goshawkjs",
   "main": "./index.js",
   "scripts": {
-    "test": "ava",
+    "test": "node --harmony-async-await node_modules/.bin/ava --serial",
     "build": "webpack",
     "start": "webpack-dev-server"
   },

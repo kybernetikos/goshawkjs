@@ -2,8 +2,9 @@ const msgpack = require('../lib/msgpack.min')
 const WebSocket = require('ws')
 
 class MsgpackConnection {
-	constructor(url) {
+	constructor(url, connectionLabel = "") {
 		this.url = url
+		this.connectionLabel = connectionLabel
 		this.websocket = null
 		this.options = {
 			codec: msgpack.createCodec({binarraybuffer: true})
@@ -19,17 +20,16 @@ class MsgpackConnection {
 		this.onMessage = onMessage
 		this.onEnd = onEnd
 		this.onOpen = onOpen
-
 		const websocket = this.websocket = new WebSocket(this.url, undefined, connectionOptions)
 		websocket.binaryType = 'arraybuffer'
 		websocket.onopen = (evt) => {
-			console.debug("Connection Open")
+			console.debug(`Connection ${this.connectionLabel}: Connection Open`)
 			if (this.onOpen) {
 				this.onOpen(evt)
 			}
 		}
 		websocket.onclose = (evt) => {
-			console.debug("Connection Closed", evt.code, evt.reason)
+			console.debug(`Connection ${this.connectionLabel}: Connection Closed`, evt.code, evt.reason)
 			if (this.onEnd) {
 				this.onEnd(evt)
 			}
@@ -38,7 +38,7 @@ class MsgpackConnection {
 			}
 		}
 		websocket.onerror = (evt) => {
-			console.error("Connection Error", evt.code, evt.reason)
+			console.error(`Connection ${this.connectionLabel}: Connection Error`, evt.code, evt.reason)
 			if (this.onEnd) {
 				this.onEnd(evt)
 			}
@@ -48,7 +48,7 @@ class MsgpackConnection {
 		}
 		websocket.onmessage = (messageEvent) => {
 			const data = msgpack.decode(new Uint8Array(messageEvent.data));
-			console.debug("<", data)
+			console.debug(`${this.connectionLabel} <`, data)
 
 			if (this.onMessage) {
 				this.onMessage(data)
@@ -76,7 +76,7 @@ class MsgpackConnection {
 	}
 
 	send(message) {
-		console.debug(">", message)
+		console.debug(`${this.connectionLabel} >`, message)
 		this.websocket.send(msgpack.encode(message, this.options))
 	}
 

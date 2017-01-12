@@ -3,7 +3,6 @@ const goshawkjs = require('../..')
 
 function firstRoot(txn) {
 	for (let rootName in txn.roots) {
-		console.log("Found root", rootName)
 		return txn.roots[rootName]
 	}
 	throw new Error("No roots.")
@@ -29,6 +28,13 @@ function transactionMustFail(error, test) {
 	}
 }
 
+function all(...tests) {
+	return (t) => {
+		const testPromises = tests.map((test) => test(t))
+		return Promise.all(testPromises)
+	}
+}
+
 function transactionTest(test) {
 	return (t) => {
 		return new Promise((resolve, reject) => {
@@ -36,14 +42,44 @@ function transactionTest(test) {
 				.connect(`wss://${connectionOptions.host}:${connectionOptions.wssPort}/ws`, connectionOptions)
 				.then((conn) => {
 					return conn.transact((txn) => {
-						test(t, conn, txn)
-					})
+						return Promise.resolve(test(t, conn, txn))
+					}).then(resolve, reject)
+				}).catch(reject)
+		})
+	}
+}
+
+function connectionTest(test) {
+	return (t) => {
+		return new Promise((resolve, reject) => {
+			goshawkjs
+				.connect(`wss://${connectionOptions.host}:${connectionOptions.wssPort}/ws`, connectionOptions)
+				.then((conn) => {
+					try {
+						return Promise.resolve(test(t, conn))
+					} catch (e) {
+						return Promise.reject(e)
+					}
 				}).then(resolve, reject)
 		})
 	}
 }
 
-function setupThenTest(setup, test) {
+function setupThenTest(preparation, ...tests) {
+	return (t) => {
+		return preparation(t).then(() => {
+			return Promise.all(tests.map((test) => {
+				try {
+					return Promise.resolve(test(t))
+				} catch (e) {
+					return Promise.reject(e)
+				}
+			}))}
+		)
+	}
+}
+
+function setupThenTransactionTest(setup, test) {
 	return (t) => {
 		return new Promise((resolve, reject) => {
 			let connection = null
@@ -64,7 +100,9 @@ function setupThenTest(setup, test) {
 }
 
 exports.connectionOptions = connectionOptions
-exports.setupThenTest = setupThenTest
+exports.setupThenTransactionTest = setupThenTransactionTest
 exports.firstRoot = firstRoot
 exports.transactionTest = transactionTest
 exports.transactionMustFail = transactionMustFail
+exports.all = all
+exports.setupThenTest = setupThenTest

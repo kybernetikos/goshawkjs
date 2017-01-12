@@ -83,7 +83,7 @@ class ObjectCacheEntry {
 			return this.readOnlyData
 		}
 
-		throw new TransactionRetryNeeded(`Object ${this.id} not present in cache`)
+		throw new TransactionRetryNeeded(`Object ${binaryToHex(this.id)} not present in cache`)
 	}
 
 	write(value, refs) {

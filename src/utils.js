@@ -23,5 +23,14 @@ function toArrayBuffer(value) {
 	throw new TypeError("Unable to convert value to array buffer " + value)
 }
 
+function asPromise(fn) {
+	try {
+		return Promise.resolve(fn())
+	} catch (e) {
+		return Promise.reject(e)
+	}
+}
+
 exports.binaryToHex = binaryToHex
 exports.toArrayBuffer = toArrayBuffer
+exports.asPromise = asPromise

@@ -4,11 +4,14 @@ const Transaction = require('./transaction')
 const Ref = require('./ref')
 const {TransactionRetryNeeded, TransactionRejectedError} = require('./errors')
 const ObjectCache = require('./objectcache')
-const {binaryToHex} = require('./utils')
+const {binaryToHex, asPromise} = require('./utils')
+
+let nextConnectionNumber = 0
 
 class GosConnection {
 	constructor(url) {
-		this.link = new MsgpackConnection(url)
+		this.connectionId = (nextConnectionNumber++)
+		this.link = new MsgpackConnection(url, ("000" + this.connectionId).substr(-3))
 		this.messageHandler = null
 		this.serverInfo = null
 		this.clientInfo = {Product: "GoshawkDB", Version: "dev"}
@@ -24,7 +27,7 @@ class GosConnection {
 
 	transact(fn) {
 		if (fn instanceof Function === false) {
-			throw new TypeError("Transaction argument must be a function.")
+			throw new TypeError(`Connection ${this.connectionId}: Transaction argument must be a function, was ${String(fn)}`)
 		}
 
 		return new Promise((resolve, reject) => {
@@ -42,28 +45,25 @@ class GosConnection {
 		const rootsHandler = (message) => {
 			this.roots = {}
 			for (const root of message.Roots) {
-				console.info(root, message.Roots)
 				this.roots[root.Name] = Ref.fromMessage(root)
 			}
 			this.namespace = message.Namespace
 			this.cache = new ObjectCache(this.namespace)
 			this.messageHandler = null
-			console.info('Connected to goshawk', this.serverInfo, this.clientInfo, this.namespace, this.roots)
+			console.info(`Connection ${this.connectionId}: Connected to goshawk`, this.serverInfo, this.clientInfo, this.namespace, this.roots)
 			this._onConnectionNegotiated(this)
 		}
-
 		return new Promise((resolve, reject) => {
 			this._onConnectionNegotiated = resolve
 			this.messageHandler = serverHelloHandler
-
 			this.link.connect((data) => {
 					if (this.messageHandler) {
 						this.messageHandler(data)
 					} else {
-						console.warn("No handler found for message", data)
+						console.warn(`Connection ${this.connectionId}: No handler found for message`, data)
 					}
 				},
-				reject,
+				(e) => reject(e),
 				() => this.link.send(this.clientInfo),
 				connectionOptions
 			)
@@ -128,25 +128,13 @@ class GosConnection {
 			}
 		}
 
-		let transactionResult = null
-		try {
-			transactionResult = Promise.resolve(currentTransaction.fn(currentTransaction))
-		} catch (e) {
-			if (e instanceof TransactionRetryNeeded) {
-				sendTransaction()
-			} else {
-				fail(e)
+		asPromise(() => {
+			return currentTransaction.fn(currentTransaction)
+		}).catch( (e) => {
+			if (e instanceof TransactionRetryNeeded === false) {
+				throw e
 			}
-			return
-		}
-
-		transactionResult
-			.catch((e) => {
-				if (e instanceof TransactionRetryNeeded === false) {
-					throw e
-				}
-			})
-			.then(sendTransaction, fail)
+		}).then(sendTransaction, fail)
 	}
 
 	updateFromTransactionResponse(response) {
@@ -157,7 +145,7 @@ class GosConnection {
 				for (let action of update.Actions) {
 					const id = action.VarId
 					if (action.Delete) {
-						console.debug(`Removing ${binaryToHex(id)} from cache.`)
+						console.debug(`Connection ${this.connectionId}: Removing ${binaryToHex(id)} from cache.`)
 						this.cache.remove(id)
 					} else {
 						const writeData = action.Write || action.Create

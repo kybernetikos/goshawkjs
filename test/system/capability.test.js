@@ -1,9 +1,9 @@
 const test = require('ava')
 const goshawkjs = require('../..')
-const {setupThenTest, firstRoot} = require('../helpers/utils')
+const {setupThenTransactionTest, firstRoot} = require('../helpers/utils')
 
 test("Capabilities are enforced.",
-	setupThenTest(
+	setupThenTransactionTest(
 		(t, connection, txn) => {
 			const root = firstRoot(txn)
 			const o1 = txn.create(Buffer.from("Hello World"), [])
