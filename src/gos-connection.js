@@ -2,7 +2,7 @@ const MsgpackConnection = require('./msgpack-connection')
 const Uint64 = require('./uint64')
 const Transaction = require('./transaction')
 const Ref = require('./ref')
-const {TransactionRetryNeeded} = require('./errors')
+const {TransactionRetryNeeded, TransactionRejectedError} = require('./errors')
 const ObjectCache = require('./objectcache')
 const {binaryToHex} = require('./utils')
 
@@ -20,16 +20,11 @@ class GosConnection {
 		this.currentTransaction = null
 		this.cache = null
 		this.scheduledCallback = null
-		this.inTxnCode = false
 	}
 
 	transact(fn) {
 		if (fn instanceof Function === false) {
 			throw new TypeError("Transaction argument must be a function.")
-		}
-
-		if (this.inTxnCode) {
-			return this.currentTransaction.transact(fn)
 		}
 
 		return new Promise((resolve, reject) => {
@@ -91,10 +86,14 @@ class GosConnection {
 		if (this.currentTransaction != null) {
 			return
 		}
+
 		const currentTransaction = this.currentTransaction = this.transactions.shift()
+		const txnIdWithNamespace = this.nextTransactionId.concat(this.namespace)
 
 		const succeed = (finalId, transactionResult) => {
-			currentTransaction.promoteCache(finalId)
+			if (finalId) {
+				currentTransaction.promoteCache(finalId)
+			}
 			currentTransaction.onSuccess(transactionResult)
 			this.scheduleNextTransaction(true)
 		}
@@ -107,35 +106,47 @@ class GosConnection {
 			currentTransaction.onFail(err)
 			this.scheduleNextTransaction(true)
 		}
-
-		const txnIdWithNamespace = this.nextTransactionId.concat(this.namespace)
-		let transactionResult = null
-		try {
-			this.inTxnCode = true
-			transactionResult = currentTransaction.fn(currentTransaction)
-			this.inTxnCode = false
-		} catch (e) {
-			this.inTxnCode = false
-			if (e instanceof TransactionRetryNeeded === false) {
-				fail(e)
-				return
+		const sendTransaction = (result) => {
+			const transactionMessage = currentTransaction.toMessage(txnIdWithNamespace)
+			if (transactionMessage.ClientTxnSubmission.Actions.length > 0) {
+				this.link.request(transactionMessage)
+					.then((response) => {
+						this.updateFromTransactionResponse(response)
+						const outcome = response.ClientTxnOutcome
+						if (outcome.Commit) {
+							succeed(outcome.FinalId, result)
+						} else if (outcome.Error != "") {
+							fail(new TransactionRejectedError(outcome.Error))
+						} else if (outcome.Abort) {
+							retry()
+						} else {
+							fail("Unknown response message " + JSON.stringify(outcome))
+						}
+					}).catch(fail)
+			} else {
+				succeed(undefined, result)
 			}
 		}
 
-		this.link.request(currentTransaction.toMessage(txnIdWithNamespace))
-			.then((response) => {
-				this.updateFromTransactionResponse(response)
-				const outcome = response.ClientTxnOutcome
-				if (outcome.Commit) {
-					succeed(outcome.FinalId, transactionResult)
-				} else if (outcome.Error != "") {
-					fail(outcome.Error)
-				} else if (outcome.Abort) {
-					retry()
-				} else {
-					fail("Unknown response message " + JSON.stringify(outcome))
+		let transactionResult = null
+		try {
+			transactionResult = Promise.resolve(currentTransaction.fn(currentTransaction))
+		} catch (e) {
+			if (e instanceof TransactionRetryNeeded) {
+				sendTransaction()
+			} else {
+				fail(e)
+			}
+			return
+		}
+
+		transactionResult
+			.catch((e) => {
+				if (e instanceof TransactionRetryNeeded === false) {
+					throw e
 				}
-			}).catch(fail)
+			})
+			.then(sendTransaction, fail)
 	}
 
 	updateFromTransactionResponse(response) {

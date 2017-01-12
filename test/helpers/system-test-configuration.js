@@ -5,7 +5,7 @@ const util = require('util')
 global.console.debug = console.log
 if (process.stdout.isTTY) {
 	util.inspect.defaultOptions.colors = true
-	util.inspect.defaultOptions.depth = 4
+	util.inspect.defaultOptions.depth = 6
 	ArrayBuffer.prototype[util.inspect.custom] = function arrayBufferToString(depth, opts) {
 		const showBytes = 30
 		const arrayBuffer = this

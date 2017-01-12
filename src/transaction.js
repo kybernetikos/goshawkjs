@@ -58,19 +58,23 @@ class Transaction {
 		}
 		const nestedTransaction = new Transaction(this.connection, fn, this.onSuccess, this.onFail, this.cache)
 		this.connection.currentTransaction = nestedTransaction
-		let result = undefined
+		let resultPromise = undefined
 		try {
-			fn(nestedTransaction)
+			resultPromise = Promise.resolve(fn(nestedTransaction))
 		} catch (e) {
 			if (e instanceof TransactionRetryNeeded) {
 				this.shouldRetry = true
 			}
-			throw e
-		} finally {
 			this.connection.currentTransaction = this
+			throw e
 		}
-		nestedTransaction.promoteCache(undefined)
-		return Promise.resolve(result)
+
+		return resultPromise
+			.then((result) => {
+				this.connection.currentTransaction = this
+				nestedTransaction.promoteCache(undefined)
+				return result
+			})
 	}
 
 	// private API
@@ -86,7 +90,6 @@ class Transaction {
 
 	toMessage(txnId) {
 		const actions = this.cache.getActions(this.connection.namespace)
-
 		return {
 			ClientTxnSubmission: {
 				Id: txnId,
