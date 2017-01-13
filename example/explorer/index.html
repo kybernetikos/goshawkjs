@@ -1,0 +1,247 @@
+<html>
+<head>
+	<script type="text/javascript" src="../../dist/goshawkdb.browser.js"></script>
+	<script src="vivagraph.min.js"></script>
+
+	<style type="text/css">
+		html {
+			width: 100%;
+			height: 100%;
+			background-color: beige;
+			margin: 0;
+			padding: 0;
+		}
+		body {
+			width: 100%;
+			height: 100%;
+			margin: 0;
+			padding: 0;
+			position: relative;
+		}
+		#container {
+			position: absolute;
+			top: 20px;
+			bottom: 20px;
+			left: 20px;
+			right: 290px;
+			background-color: white;
+		}
+		#container svg {
+			width: 100%;
+			height: 100%;
+		}
+
+		#info {
+			position: absolute;
+			top: 20px;
+			bottom: 20px;
+			right: 20px;
+			width: 250px;
+			background-color: white;
+			font-size: 14px;
+			padding: 4px;
+			font-family: 'DejaVu Sans Mono', monospace;
+			overflow-y: scroll;
+			overflow-x: hidden;
+		}
+
+		.id {
+			text-align: right;
+			padding-bottom: 20px;
+		}
+
+		.nonprintable {
+			color: gray;
+		}
+
+		.printable {
+			color: darkorange;
+		}
+
+		.rootname {
+			padding-right: 15px;
+			color: red;
+			font-weight: bold;
+		}
+	</style>
+</head>
+<body>
+<div id="container"></div>
+<div id="info"></div>
+<script src="graph.js"></script>
+<script>
+	const graph = Viva.Graph.graph()
+
+	let selectedNodeId = null
+
+	traceGraph((nodes, edges, addedNodes, removedNodes, addedEdges, removedEdges, changedValues) => {
+		for (let nodeKey of changedValues) {
+			graph.getNode(nodeKey).data = nodes.get(nodeKey)
+		}
+		for (let nodeKey of addedNodes) {
+			graph.addNode(nodeKey, nodes.get(nodeKey))
+		}
+		for (let nodeKey of removedNodes) {
+			graph.removeNode(nodeKey)
+		}
+		for (let [source, dests] of addedEdges) {
+			for (let dest of dests) {
+				graph.addLink(source, dest)
+			}
+		}
+		for (let [source, dests] of removedEdges) {
+			for (let dest of dests) {
+				graph.removeLink(source, dest)
+			}
+		}
+
+		displayInfo()
+	})
+
+	nodeSize = 15
+
+	const graphics = Viva.Graph.View.svgGraphics();
+	graphics.node(function(node) {
+		let fill = "#00a2e8"
+		if (node.data.name) {
+			fill = "red"
+		}
+		let result = Viva.Graph.svg("rect")
+			.attr("width", nodeSize)
+			.attr("height", nodeSize)
+			.attr("fill", fill)
+
+		result.onclick = () => {
+			if (selectedNodeId) {
+				const nodeUI = graphics.getNodeUI(selectedNodeId);
+				if (nodeUI) {
+					nodeUI.attr('stroke', 'none');
+				}
+			}
+			selectedNodeId = node.id
+			displayInfo()
+			const nodeUI = graphics.getNodeUI(node.id);
+			if (nodeUI) {
+				nodeUI.attr('stroke', 'black');
+			}
+		}
+		return result
+	}).placeNode(function(nodeUI, pos) {
+		nodeUI.attr('x', pos.x - nodeSize / 2).attr('y', pos.y - nodeSize / 2);
+	})
+
+	const createMarker = function(id) {
+			return Viva.Graph.svg('marker')
+				.attr('id', id)
+				.attr('viewBox', "0 0 10 10")
+				.attr('refX', "10")
+				.attr('refY', "5")
+				.attr('markerUnits', "strokeWidth")
+				.attr('markerWidth', "10")
+				.attr('markerHeight', "5")
+				.attr('orient', "auto")
+		}, marker = createMarker('Triangle')
+	marker.append('path').attr('d', 'M 0 0 L 10 5 L 0 10 z')
+	const defs = graphics.getSvgRoot().append('defs')
+	defs.append(marker);
+	const geom = Viva.Graph.geom();
+	graphics.link(function(link){
+		return Viva.Graph.svg('path')
+			.attr('stroke', 'gray')
+			.attr('marker-end', 'url(#Triangle)');
+	}).placeLink(function(linkUI, fromPos, toPos) {
+		const toNodeSize = nodeSize + 3, fromNodeSize = nodeSize + 3
+		const from = geom.intersectRect(
+				fromPos.x - fromNodeSize / 2, // left
+				fromPos.y - fromNodeSize / 2, // top
+				fromPos.x + fromNodeSize / 2, // right
+				fromPos.y + fromNodeSize / 2, // bottom
+				fromPos.x, fromPos.y, toPos.x, toPos.y) || fromPos
+		const to = geom.intersectRect(
+				toPos.x - toNodeSize / 2, // left
+				toPos.y - toNodeSize / 2, // top
+				toPos.x + toNodeSize / 2, // right
+				toPos.y + toNodeSize / 2, // bottom
+				toPos.x, toPos.y, fromPos.x, fromPos.y) || toPos
+		const data = 'M' + from.x + ',' + from.y + 'L' + to.x + ',' + to.y
+		linkUI.attr("d", data);
+	});
+
+	const renderer = Viva.Graph.View.renderer(graph, {
+		graphics : graphics,
+		container: document.getElementById('container')
+	})
+	renderer.run()
+
+	function populate() {
+		goshawkjs.connect("wss://localhost:9999/ws").then((connection) => {
+			connection.transact((txn) => {
+				const o1 = txn.create(stringToArrayBuffer("Hello"), [])
+				const o2 = txn.create(Uint8Array.from([0, 20, 40, 60, 90, 100, 32, 52, 91, 200, 65, 67, 78, 92, 35, 10, 19, 20, 39, 40, 41, 42, 43, 100, 101, 102, 103, 104]), [])
+				const o3 = txn.create(stringToArrayBuffer("Maybe"), [o2, o1])
+				const o4 = txn.create(stringToArrayBuffer("stuff"), [o3])
+
+				txn.write(txn.roots["myRoot"], stringToArrayBuffer("ROOT"), [o4])
+			})
+		}).catch((err) => {
+			console.log("Connection Failed", err)
+		})
+	}
+
+	function displayInfo() {
+		const element = document.getElementById('info')
+		if (selectedNodeId == null) {
+			element.innerHTML = "no node selected"
+		} else {
+			const data = graph.getNode(selectedNodeId).data
+			element.innerHTML = ""
+			element.appendChild(info(data))
+		}
+	}
+
+	function info(node) {
+		const namespace = node.id.substring(18)
+		const idV = node.id.substring(2, 18)
+
+		return asElement(`
+			<div class="id">
+				<span class="rootname">${node.name || ""}</span> <span>${idV}</spanspan>
+				<span>${namespace}</span>
+			</div>
+			Data:
+			${toInspection(node.value)}`)
+	}
+
+	function asElement(txt) {
+		const result = document.createElement('div')
+		result.innerHTML = txt
+		return result
+	}
+
+	function byteToHex(byte) {
+		return ("0" + byte.toString(16)).substr(-2)
+	}
+	function byteToHtml(byte) {
+		if (byte >= 32) {
+			return `<span class='printable'>${String.fromCharCode(byte)}</span>`
+		}
+		return `<span class='nonprintable'>.</span>`
+	}
+	function toInspection(arrayBuffer) {
+		const uintarray = new Uint8Array(arrayBuffer)
+		const width = 8
+		const lines = []
+		let end = 0
+		while (end < uintarray.byteLength) {
+			const data = Array.from(uintarray.slice(end, end + width))
+			const hex = (data.map(byteToHex).join("") + "--".repeat(width)).substring(0, width * 2)
+			const chars = data.map(byteToHtml).join("")
+			lines.push(`<div><span class="hex">${hex}</span> ${chars}</div>`)
+			end = end + width
+		}
+		return lines.join("")
+	}
+
+</script>
+</body>
+</html>
