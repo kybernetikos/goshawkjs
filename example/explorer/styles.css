@@ -1,0 +1,59 @@
+html {
+    width: 100%;
+    height: 100%;
+    background-color: beige;
+    margin: 0;
+    padding: 0;
+}
+body {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    position: relative;
+}
+#container {
+    position: absolute;
+    top: 20px;
+    bottom: 20px;
+    left: 20px;
+    right: 290px;
+    background-color: white;
+}
+#container svg {
+    width: 100%;
+    height: 100%;
+}
+
+#info {
+    position: absolute;
+    top: 20px;
+    bottom: 20px;
+    right: 20px;
+    width: 250px;
+    background-color: white;
+    font-size: 14px;
+    padding: 4px;
+    font-family: 'DejaVu Sans Mono', monospace;
+    overflow-y: scroll;
+    overflow-x: hidden;
+}
+
+.id {
+    text-align: right;
+    padding-bottom: 20px;
+}
+
+.nonprintable {
+    color: gray;
+}
+
+.printable {
+    color: darkorange;
+}
+
+.rootname {
+    padding-right: 15px;
+    color: red;
+    font-weight: bold;
+}
