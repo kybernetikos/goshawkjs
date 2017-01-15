@@ -213,6 +213,7 @@ class CopyCache {
 		}
 	}
 
+	// Returns an array of all the actions that have occurred on this cache.
 	getActions(namespace) {
 		const actions = []
 		// the version to ask for if we don't currently have any data in the cache for an object.

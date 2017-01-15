@@ -26,7 +26,7 @@ class Transaction {
 
 		/**
 		 * The roots that this client has access to.
-		 * @type {*}
+		 * @type {{string: Ref}}
 		 */
 		this.roots = connection.roots
 

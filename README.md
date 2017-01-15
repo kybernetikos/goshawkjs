@@ -90,7 +90,7 @@ goshawkjs.connect("wss://localhost:9999/ws", connectionOptions).then((connection
 The configuration of keys and certificates must be done in whatever way your browser
 and operating system support.
 
-Check that it has worked by navigating to [https://localhost:9999/ws](https://localhost:9999/ws).
+Check that it has worked by navigating to [https://localhost:9999/](https://localhost:9999/).
 If it's working, it will say 'GoshawkDB Server version dev. Websocket available at /ws'.
 
 Include the client:

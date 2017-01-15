@@ -43,7 +43,7 @@ class GosConnection {
 		/**
 		 * The roots that this client has access to.
 		 * Provided by the server during handshake.
-		 * @type {*}
+		 * @type {{string: Ref}}
 		 */
 		this.roots = {}
 
