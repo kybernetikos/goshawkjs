@@ -10,7 +10,7 @@ test("Retry with value changed by a time", setupThenTest(
 		if (value[0] < 2) {
 			txn.retry()
 		}
-		t.true(value[0], 2)
+		t.is(value[0], 2)
 	}),
 	transactionTest((t, connection, txn) => {
 		return new Promise((resolve, reject) => {

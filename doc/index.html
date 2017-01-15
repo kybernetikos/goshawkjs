@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <base data-ice="baseUrl">
+  <title data-ice="title">API Document</title>
+  <link type="text/css" rel="stylesheet" href="css/style.css">
+  <link type="text/css" rel="stylesheet" href="css/prettify-tomorrow.css">
+  <script src="script/prettify/prettify.js"></script>
+  
+  
+  <script src="script/manual.js"></script>
+</head>
+<body class="layout-container" data-ice="rootContainer">
+
+<header>
+  <a href="./">Home</a>
+  
+  <a href="identifiers.html">Reference</a>
+  <a href="source.html">Source</a>
+  
+  <a data-ice="repoURL" href="https://github.com/kybernetikos/goshawkjs" class="repo-url-github">Repository</a>
+  <div class="search-box">
+  <span>
+    <img src="./image/search.png">
+    <span class="search-input-edge"></span><input class="search-input"><span class="search-input-edge"></span>
+  </span>
+    <ul class="search-result"></ul>
+  </div>
+</header>
+
+<nav class="navigation" data-ice="nav"><div>
+  <ul>
+    
+  <li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/errors.js~CapabilityDenied.html">CapabilityDenied</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/errors.js~MutationNotAllowed.html">MutationNotAllowed</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/errors.js~Throwable.html">Throwable</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/errors.js~TransactionRejectedError.html">TransactionRejectedError</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/errors.js~TransactionRetryNeeded.html">TransactionRetryNeeded</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/gos-connection.js~GosConnection.html">GosConnection</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/goshawk.js~Goshawk.html">Goshawk</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/ref.js~Ref.html">Ref</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/transaction.js~Transaction.html">Transaction</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/uint64.js~Uint64.html">Uint64</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-function">F</span><span data-ice="name"><span><a href="function/index.html#static-function-asPromise">asPromise</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-function">F</span><span data-ice="name"><span><a href="function/index.html#static-function-binaryToHex">binaryToHex</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-function">F</span><span data-ice="name"><span><a href="function/index.html#static-function-toArrayBuffer">toArrayBuffer</a></span></span></li>
+</ul>
+</div>
+</nav>
+
+<div class="content" data-ice="content"><div data-ice="index" class="github-markdown"><h1 id="goshawkjs">goshawkjs</h1>
+<p>GoshawkJS is a javascript client for goshawkdb.</p>
+<h2 id="notes-for-getting-started">Notes for getting Started</h2>
+<p>Run a goshawkdb server with the config found in <code>example/env</code>.  See the <a href="https://goshawkdb.io/documentation.html">goshawkdb documentation</a>.</p>
+<p>When running in the browser, you&apos;ll need to import the certificates for your user.  You can 
+test that you&apos;ve done this correctly by going to <a href="https://localhost:9999/">https://localhost:9999/ws</a>.<br>If it&apos;s working, it will say &apos;GoshawkDB Server version dev. Websocket available at /ws&apos;.</p>
+<p>To see the web example</p>
+<pre><code><code class="source-code prettyprint">npm run start</code>
+</code></pre><p>And navigate to <a href="http://localhost:8080/example/">http://localhost:8080/example/</a></p>
+<p>The specific example code assumes that your database has a root object
+with two references to other objects.</p>
+<p>To see the node example</p>
+<pre><code><code class="source-code prettyprint">node example/node-example.js</code>
+</code></pre><h2 id="setup">Setup</h2>
+<h3 id="in-node">In Node</h3>
+<p>Import goshawkjs</p>
+<pre><code class="lang-bash"><code class="source-code prettyprint">npm install --save kybernetikos/goshawkjs</code>
+</code></pre>
+<p>When running in node, I suggest the following in your code:</p>
+<pre><code class="lang-js"><code class="source-code prettyprint">// Doesn&apos;t log at debug level as it&apos;s pretty noisy.  I&apos;ll need a proper logging solution soon...
+global.console.debug = () =&gt; {}
+// global.console.debug = global.console.log
+
+// Make console.log of objects use colours.  Pretty
+if (process.stdout.isTTY) {
+    require(&apos;util&apos;).inspect.defaultOptions.colors = true
+}</code>
+</code></pre>
+<p>Get a goshawkjs reference and open a connection:</p>
+<pre><code class="lang-js"><code class="source-code prettyprint">const goshawkjs = require(&apos;goshawkjs&apos;)
+
+// These will need to be for a user that your goshawkdb configuration allows.
+// Check the .pem file you created for that user.
+const connectionOptions = {
+    rejectUnauthorized: false,
+    cert: `-----BEGIN CERTIFICATE-----
+MIIBszCCAVmgAwIBAgIIUHgu22HZLJkwCgYIKoZIzj0EAwIwOjESMBAGA1UEChMJ
+R29zaGF3a0RCMSQwIgYDVQQDExtDbHVzdGVyIENBIFJvb3QgQ2VydGlmaWNhdGUw
+IBcNMTYxMjE5MTEwMTE4WhgPMjIxNjEyMTkxMTAxMThaMBQxEjAQBgNVBAoTCUdv
+c2hhd2tEQjBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABEBLPJry7JgUU4UFyycU
+ho0Lut+/eHgo5pBrXP0gsdC52DX3A+dETyRSmilagFrnxxdEUFxEHVF/dMmX4liv
+14GjbTBrMA4GA1UdDwEB/wQEAwIHgDATBgNVHSUEDDAKBggrBgEFBQcDAjAMBgNV
+HRMBAf8EAjAAMBkGA1UdDgQSBBCbGXFg2f4Hu4302AGGnOs+MBsGA1UdIwQUMBKA
+EI4ItnwgV5AGs2bJdVP5os4wCgYIKoZIzj0EAwIDSAAwRQIhANBON8j48On2jd/+
+sCzxhdFur/tJqc0CyKQIFXy3zgGmAiBr0VBtKK+OGBxA/QSlqGZGed+udOQ0qHYi
+kBqGTwQfvQ==
+-----END CERTIFICATE-----`,
+    key: `-----BEGIN EC PRIVATE KEY-----
+MHcCAQEEIF3aJdsPnKsMxpPPa2RFx0R4oFGF4gXYHLsuL62v6L7+oAoGCCqGSM49
+AwEHoUQDQgAEQEs8mvLsmBRThQXLJxSGjQu63794eCjmkGtc/SCx0LnYNfcD50RP
+JFKaKVqAWufHF0RQXEQdUX90yZfiWK/XgQ==
+-----END EC PRIVATE KEY-----`
+}
+
+goshawkjs.connect(&quot;wss://localhost:9999/ws&quot;, connectionOptions).then((connection) =&gt; {
+
+    // this is where your goshawkjs code goes
+
+})</code>
+</code></pre>
+<h3 id="in-the-browser">In the browser</h3>
+<p>The configuration of keys and certificates must be done in whatever way your browser
+and operating system support.</p>
+<p>Check that it has worked by navigating to <a href="https://localhost:9999/ws">https://localhost:9999/ws</a>.
+If it&apos;s working, it will say &apos;GoshawkDB Server version dev. Websocket available at /ws&apos;.</p>
+<p>Include the client:</p>
+<pre><code class="lang-html"><code class="source-code prettyprint">&lt;script type=&quot;text/javascript&quot; src=&quot;goshawkdb.browser.js&quot;&gt;&lt;/script&gt;</code>
+</code></pre>
+<p>The file <code>goshawkdb.browser.js</code> is located in the dist subfolder of this module.
+It is regenerated on an <code>npm build</code>.</p>
+<p>Now include your code, e.g.</p>
+<pre><code class="lang-js"><code class="source-code prettyprint">goshawkjs.connect(&quot;wss://localhost:9999/ws&quot;).then((connection) =&gt; {
+
+    // this is where your goshawkjs code goes
+
+})</code>
+</code></pre>
+<h3 id="connection-api">Connection API</h3>
+<p>A connection allows you to submit transactions.  Only one transaction is ever active at a time, calling <code>transact</code> while
+another transaction is active will cause your new transaction to be queued.</p>
+<pre><code class="lang-js"><code class="source-code prettyprint">const promiseOfSomething = connection.transact((txn) =&gt; {
+
+    // transaction code
+
+    return something
+})</code>
+</code></pre>
+<h3 id="transaction-api">Transaction API</h3>
+<p><strong>NOTE</strong>: code submitted to <code>.transact</code> may be run by the system multiple times. Avoid making side effecting changes
+from inside a transaction.  The goshawkjs library uses exceptions to stop execution when there is a cache miss and it
+needs to request values from the server.  If you use try catch around transaction methods and you want this behaviour
+to work, you will need to rethrow any exceptions with a name of <code>TransactionRetryNeeded</code> that you inadvertantly catch.</p>
+<p>Inside a transaction you can access references to the configured root objects:</p>
+<pre><code class="lang-js"><code class="source-code prettyprint">const rootRef = txn.roots[&apos;myRoot&apos;]</code>
+</code></pre>
+<p>You can read the value and references of an object via a reference to that object.</p>
+<pre><code class="lang-js"><code class="source-code prettyprint">const {value, refs} = txn.read(rootRef)</code>
+</code></pre>
+<p>Values are ArrayBuffers while <code>refs</code> is an array of Reference ojects.</p>
+<p>To write to an object you call <code>txn.write</code>.  This example code loads the first reference from
+the root object (assuming it refers to some object), then sets the value and adds a reference back to the root object.</p>
+<pre><code class="lang-js"><code class="source-code prettyprint">const otherObjRef = refs[0]
+const otherRefs = txn.read(otherObjRef).refs
+txn.write(otherObjRef, Buffer.from(&quot;hello&quot;), otherRefs.concat(rootRef))</code>
+</code></pre>
+<p>Values can be buffers (in node), typed arrays or arraybuffers.</p>
+<p>You can create an object too with</p>
+<pre><code class="lang-js"><code class="source-code prettyprint">const newRef = txn.create(Buffer.from(&quot;thing&quot;), [])</code>
+</code></pre>
+<p>If you want to be notified when something changes, you can create a transaction that reads the values you&apos;re interested
+in and then calls <code>txn.retry()</code>.  This will cause the transaction to stop processing until the values change, at which
+point the transaction will be run again.</p>
+<p>If you want to check that references point to the same object, you can do this with <code>if (ref.sameReferent(otherRef))</code>.</p>
+</div>
+</div>
+
+<footer class="footer">
+  Generated by <a href="https://esdoc.org">ESDoc<span data-ice="esdocVersion">(0.5.2)</span><img src="./image/esdoc-logo-mini-black.png"></a>
+</footer>
+
+<script src="script/search_index.js"></script>
+<script src="script/search.js"></script>
+<script src="script/pretty-print.js"></script>
+<script src="script/inherited-summary.js"></script>
+<script src="script/test-summary.js"></script>
+<script src="script/inner-link.js"></script>
+<script src="script/patch-for-local.js"></script>
+</body>
+</html>

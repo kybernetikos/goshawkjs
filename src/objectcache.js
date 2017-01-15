@@ -3,6 +3,19 @@ const {TransactionRetryNeeded, MutationNotAllowed} = require('./errors')
 const Uint64 = require('./uint64')
 const Ref = require('./ref')
 
+function checkRefs(refs) {
+	for (let i = 0; i < refs.length; ++i) {
+		const ref = refs[i]
+		if (ref instanceof Ref === false) {
+			throw new TypeError(`Reference ${i} was not of reference type - was a ${ref.constructor.name} : ${ref.toString()}`)
+		}
+	}
+}
+
+/**
+ * The top level object cache. It keeps objects value and refs stored against their id.
+ * @private
+ */
 class ObjectCache {
 	constructor() {
 		this.objects = new Map()
@@ -31,10 +44,15 @@ class ObjectCache {
 
 module.exports = ObjectCache
 
+// An ObjectCacheEntry represents the clients knowledge about a GoshawkDB Object.
+//  - It should always have an id.
+//  - If it contains values known to have been in the database (either they have been sent in a cache update, or a
+//    create/write that has been acknowledged.  The values version and data.value and data.refs will be set.
+//	- data.refs and data.value will be set after a write or create.
 class ObjectCacheEntry {
 	constructor(id) {
 		if (id instanceof Uint8Array == false) {
-			throw new TypeError("id must be a uint8, was " + id.toString())
+			throw new TypeError(`id must be a uint8, was ${String(id)}`)
 		}
 		this.id = id
 
@@ -44,6 +62,7 @@ class ObjectCacheEntry {
 			refs: null
 		}
 
+		// best effort attempt to restrict mutations in the data I return to the user.
 		this.readOnlyData = Object.create({}, {
 			value: {
 				set: () => { throw new MutationNotAllowed("Cannot set value without a transaction.write call.") },
@@ -62,14 +81,19 @@ class ObjectCacheEntry {
 			}
 		})
 
+		// Record which actions have occurred on this object from the client.
+		// These are only needed on objects within a transactions cache, not at the top level.
+		//  - If something has been written or created, calling read on it has no effect (it is answered from cache).
+		//  - If something has been created, calling write on it has no effect (the create is merely updated to the contents of the write).
 		this.hasBeenWritten = false
 		this.hasBeenRead = false
 		this.hasBeenCreated = false
 	}
 
+	// Updates representing version, value and refs are they are in the remote database.  Can populate on an abort or a submit.
 	update(version, value, refs) {
 		value = toArrayBuffer(value)
-		ObjectCacheEntry.checkRefs(refs)
+		checkRefs(refs)
 		this.data.value = value
 		this.data.refs = refs
 		this.version = toArrayBuffer(version)
@@ -88,7 +112,7 @@ class ObjectCacheEntry {
 
 	write(value, refs) {
 		value = toArrayBuffer(value)
-		ObjectCacheEntry.checkRefs(refs)
+		checkRefs(refs)
 		if (!this.hasBeenCreated) {
 			this.hasBeenWritten = true
 		}
@@ -100,19 +124,10 @@ class ObjectCacheEntry {
 		if (value instanceof ArrayBuffer != true) {
 			throw new TypeError("values should be array buffers : " + value)
 		}
-		ObjectCacheEntry.checkRefs(refs)
+		checkRefs(refs)
 		this.hasBeenCreated = true
 		this.data.value = value
 		this.data.refs = refs
-	}
-
-	static checkRefs(refs) {
-		for (let i = 0; i < refs.length; ++i) {
-			const ref = refs[i]
-			if (ref instanceof Ref === false) {
-				throw new TypeError(`Reference ${i} was not of reference type - was a ${ref.constructor.name} : ${ref.toString()}`)
-			}
-		}
 	}
 
 	clone() {
@@ -173,6 +188,7 @@ class CopyCache {
 					parentEntry.update(finalTxnId, entry.data.value, entry.data.refs)
 				}
 			} else {
+				// otherwise, it's a nested transaction completing, so we do a full copy into the parent.
 				parentEntry.copyFrom(entry)
 			}
 		}
@@ -180,6 +196,7 @@ class CopyCache {
 
 	getActions(namespace) {
 		const actions = []
+		// the version to ask for if we don't currently have any data in the cache for an object.
 		const initialVersion = Uint64.from(0, 0, 0, 0, 0, 0, 0, 0).concat(namespace)
 
 		for (let [,cacheEntry] of this.objects) {

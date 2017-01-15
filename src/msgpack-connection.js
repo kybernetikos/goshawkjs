@@ -1,14 +1,20 @@
 const msgpack = require('../lib/msgpack.min')
 const WebSocket = require('ws')
 
+/**
+ * The websocket and Msgpack connection.
+ * @private
+ */
 class MsgpackConnection {
 	constructor(url, connectionLabel = "") {
 		this.url = url
+		// connectionLabel is purely used for logging.
 		this.connectionLabel = connectionLabel
 		this.websocket = null
 		this.options = {
 			codec: msgpack.createCodec({binarraybuffer: true})
 		}
+		// all the callbacks!
 		this.onOpen = null
 		this.onEnd = null
 		this.onMessage = null
@@ -18,6 +24,7 @@ class MsgpackConnection {
 
 	connect(onMessage, onEnd, onOpen, connectionOptions) {
 		this.onMessage = onMessage
+		// onEnd triggers onError or onClose.
 		this.onEnd = onEnd
 		this.onOpen = onOpen
 		const websocket = this.websocket = new WebSocket(this.url, undefined, connectionOptions)
@@ -56,6 +63,13 @@ class MsgpackConnection {
 		}
 	}
 
+	send(message) {
+		console.debug(`${this.connectionLabel} >`, message)
+		this.websocket.send(msgpack.encode(message, this.options))
+	}
+
+	// sends a message, and returns a promise which resolves with the next message back from the server. This helps
+	// make a request/response pattern easy.  It replaces onMessage and onEnd until it receives the message.
 	request(message) {
 		const oldHandler = this.onMessage
 		const oldEndHandler = this.onEnd
@@ -66,6 +80,8 @@ class MsgpackConnection {
 				this.onEnd = oldEndHandler
 			}
 			this.onEnd = (evt) => {
+				this.onMessage = oldHandler
+				this.onEnd = oldEndHandler
 				reject(evt)
 				if (oldEndHandler) {
 					oldEndHandler(evt)
@@ -73,11 +89,6 @@ class MsgpackConnection {
 			}
 			this.send(message)
 		})
-	}
-
-	send(message) {
-		console.debug(`${this.connectionLabel} >`, message)
-		this.websocket.send(msgpack.encode(message, this.options))
 	}
 
 	close() {

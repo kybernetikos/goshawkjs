@@ -2,14 +2,24 @@
 <html>
 <head>
 	<meta charset="utf-8" />
-	<title>GoshawkJS Test Page</title>
+	<title>GoshawkJS Example Test Page</title>
+	<script type="text/javascript" src="../dist/goshawkdb.browser.js"></script>
 </head>
 <body>
-GoshawkJS Test Page.  Open the console.
+<p>
+	GoshawkJS Example Test Page.  Open the developer console for more information.
+</p>
 
-<script type="text/javascript" src="../dist/goshawkdb.browser.js"></script>
+<p>
+	This test overwrites the contents of your root object.  It checks that references created with particular capabilities
+	don't allow you access to objects that you aren't supposed to have.
+</p>
+
+<button onclick="runTest()">Run Test</button>
 
 <script language="javascript" type="text/javascript">
+	console.log("Click the button to run the test.")
+
 	function stringToArrayBuffer(string) {
 		return new TextEncoder('utf-8').encode(string).buffer
 	}
@@ -67,13 +77,15 @@ GoshawkJS Test Page.  Open the console.
 		ensureThrows(() => txn.write(noAnythingRef, stringToArrayBuffer("this shouldn't work"), []), goshawkjs.errors.CapabilityDenied)
 	}
 
-	goshawkjs.connect("wss://localhost:9999/ws").then((connection) => {
-		connection.transact(setup).then( () => {
-			return connection.transact(test)
-		}).then((x) => console.log('Transaction Committed', x), (e) => console.log('Transaction Failed', e))
-	}).catch((err) => {
-		console.log("Connection Failed", err)
-	})
+	function runTest() {
+		goshawkjs.connect("wss://localhost:9999/ws").then((connection) => {
+			connection.transact(setup).then( () => {
+				return connection.transact(test)
+			}).then((x) => console.log('Transaction Committed', x), (e) => console.log('Transaction Failed', e))
+		}).catch((err) => {
+			console.log("Connection Failed", err)
+		})
+	}
 </script>
 </body>
 </html>

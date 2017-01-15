@@ -2,6 +2,8 @@ function stringToArrayBuffer(string) {
 	return new TextEncoder('utf-8').encode(string).buffer
 }
 
+// This is an unused function that you can execute from the developer console
+// if you want to see the data change.
 function populate() {
 	goshawkjs.connect("wss://localhost:9999/ws").then((connection) => {
 		connection.transact((txn) => {

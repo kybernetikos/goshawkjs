@@ -1,0 +1,44 @@
+{
+  "coverage": "97.82%",
+  "expectCount": 46,
+  "actualCount": 45,
+  "files": {
+    "src/errors.js": {
+      "expectCount": 8,
+      "actualCount": 7,
+      "undocumentLines": [
+        2
+      ]
+    },
+    "src/gos-connection.js": {
+      "expectCount": 8,
+      "actualCount": 8,
+      "undocumentLines": []
+    },
+    "src/goshawk.js": {
+      "expectCount": 2,
+      "actualCount": 2,
+      "undocumentLines": []
+    },
+    "src/ref.js": {
+      "expectCount": 7,
+      "actualCount": 7,
+      "undocumentLines": []
+    },
+    "src/transaction.js": {
+      "expectCount": 7,
+      "actualCount": 7,
+      "undocumentLines": []
+    },
+    "src/uint64.js": {
+      "expectCount": 11,
+      "actualCount": 11,
+      "undocumentLines": []
+    },
+    "src/utils.js": {
+      "expectCount": 3,
+      "actualCount": 3,
+      "undocumentLines": []
+    }
+  }
+}

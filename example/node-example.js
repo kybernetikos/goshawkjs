@@ -1,5 +1,12 @@
+/*
+ * This example connects to a goshawk wssPort running on localhost:9999 and reads the value of the 'myRoot' root.
+ * Then it overwrites the value on the 'myRoot' root to 'Boo!'.
+ */
 const goshawkjs = require('..')
 
+// The cert and key should be taken from the .pem file for the user you wish to connect as.
+// The user should also have a root called 'myRoot' for the rest of the test to work.  You can
+// see the example/env folder for an example configuration.
 const connectionOptions = {
 	rejectUnauthorized: false,
 	cert: `-----BEGIN CERTIFICATE-----

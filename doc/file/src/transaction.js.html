@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <base data-ice="baseUrl" href="../../">
+  <title data-ice="title">src/transaction.js | API Document</title>
+  <link type="text/css" rel="stylesheet" href="css/style.css">
+  <link type="text/css" rel="stylesheet" href="css/prettify-tomorrow.css">
+  <script src="script/prettify/prettify.js"></script>
+  
+  
+  <script src="script/manual.js"></script>
+</head>
+<body class="layout-container" data-ice="rootContainer">
+
+<header>
+  <a href="./">Home</a>
+  
+  <a href="identifiers.html">Reference</a>
+  <a href="source.html">Source</a>
+  
+  <a data-ice="repoURL" href="https://github.com/kybernetikos/goshawkjs" class="repo-url-github">Repository</a>
+  <div class="search-box">
+  <span>
+    <img src="./image/search.png">
+    <span class="search-input-edge"></span><input class="search-input"><span class="search-input-edge"></span>
+  </span>
+    <ul class="search-result"></ul>
+  </div>
+</header>
+
+<nav class="navigation" data-ice="nav"><div>
+  <ul>
+    
+  <li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/errors.js~CapabilityDenied.html">CapabilityDenied</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/errors.js~MutationNotAllowed.html">MutationNotAllowed</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/errors.js~Throwable.html">Throwable</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/errors.js~TransactionRejectedError.html">TransactionRejectedError</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/errors.js~TransactionRetryNeeded.html">TransactionRetryNeeded</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/gos-connection.js~GosConnection.html">GosConnection</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/goshawk.js~Goshawk.html">Goshawk</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/ref.js~Ref.html">Ref</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/transaction.js~Transaction.html">Transaction</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/uint64.js~Uint64.html">Uint64</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-function">F</span><span data-ice="name"><span><a href="function/index.html#static-function-asPromise">asPromise</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-function">F</span><span data-ice="name"><span><a href="function/index.html#static-function-binaryToHex">binaryToHex</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-function">F</span><span data-ice="name"><span><a href="function/index.html#static-function-toArrayBuffer">toArrayBuffer</a></span></span></li>
+</ul>
+</div>
+</nav>
+
+<div class="content" data-ice="content"><h1 data-ice="title">src/transaction.js</h1>
+<pre class="source-code line-number raw-source-code"><code class="prettyprint linenums" data-ice="content">const Ref = require(&apos;./ref&apos;)
+const {TransactionRetryNeeded, CapabilityDenied} = require(&apos;./errors&apos;)
+const {toArrayBuffer} = require(&apos;./utils&apos;)
+
+/**
+ * A transaction represents an attempt to make a modification to the database.
+ *
+ * The code associated with it may be required to run multiple times before it
+ * successfully completes.  Care must be taken to make sure this will not
+ * break the client environment.
+ *
+ * Transactions are acquired by calling {@link Connection#transact}.
+ */
+class Transaction {
+
+	/** @private */
+	constructor(connection, txnFn, onSuccess, onFail, parentCache) {
+		/** @private */
+		this.onSuccess = onSuccess;
+
+		/** @private */
+		this.onFail = onFail;
+
+		/** @private */
+		this.shouldRetry = false
+
+		/**
+		 * The roots that this client has access to.
+		 * @type {*}
+		 */
+		this.roots = connection.roots
+
+		/** @private */
+		this.fn = txnFn
+
+		/** @private */
+		this.connection = connection
+
+		/** @private */
+		this.parentCache = parentCache
+
+		/** @private */
+		this.cache = parentCache.getTemporaryView()
+	}
+
+	/**
+	 * Reads the value and references from an object pointed to by a Ref.
+	 * @param {Ref} ref a reference to the object to read from.
+	 * @returns {{value:ArrayBuffer, refs:Ref[]}}
+	 * @throws {CapabilityDenied} if ref does not have read capability.
+	 * @throws {TransactionRetryNeeded} if the object is not in cache. Do not catch this without rethrowing it.
+	 */
+	read(ref) {
+		if (ref instanceof Ref == false) {
+			throw new TypeError(`Can only read a reference; you tried to read from ${String(ref)}`)
+		}
+		if (!ref.read) {
+			throw new CapabilityDenied(`Unable to read using reference ${ref.toString()}, as it doesn&apos;t allow reads.`)
+		}
+		const id = ref.varId
+		const cacheEntry = this.cache.get(id)
+		return cacheEntry.read()
+	}
+
+	/**
+	 * Changes the value an dreferences of an object pointed to by a Ref.
+	 * @param {Ref} ref a reference to the object to be written.
+	 * @param {ArrayBuffer|Buffer|TypedArray} value the new value to be stored in the object.
+	 * @param {Ref[]} refs the references from this object to other objects.
+	 */
+	write(ref, value, refs) {
+		if (ref instanceof Ref == false) {
+			throw new TypeError(`Can only write with a reference; you tried to write to ${String(ref)}.`)
+		}
+		if (!ref.write) {
+			throw new CapabilityDenied(`Unable to write using reference ${ref.toString()}, as it doesn&apos;t allow writes.`)
+		}
+		value = toArrayBuffer(value)
+		const id = ref.varId
+		const cacheEntry = this.cache.get(id)
+		cacheEntry.write(value, refs)
+	}
+
+	/**
+	 * Creates a new object and returns the reference to it.
+	 * @param {ArrayBuffer|Buffer|TypedArray} value the value that the new object will be created with.
+	 * @param {Ref[]} refs the references that the new object will be created with.  This will default to the empty array.
+	 * @returns {Ref} a reference to the newly created object.
+	 */
+	create(value, refs = []) {
+		value = toArrayBuffer(value)
+		const newId = this.connection.getNewObjectId()
+		const cacheEntry = this.cache.get(newId)
+		cacheEntry.create(value, refs)
+		return new Ref(new Uint8Array(newId), true, true)
+	}
+
+	/**
+	 * Stops the current transaction, and waits for any of the values that have been
+	 * read to change before rerunning.  No further transactions will be processed while
+	 * a transaction is waiting.
+	 *
+	 * Internally, this method throws a TransactionRetryNeeded error.  If you catch it
+	 * and do not rethrow it, you will stop the retry behaviour from working.
+	 *
+	 * @throws {TransactionRetryNeeded}
+	 */
+	retry() {
+		this.shouldRetry = true
+		throw new TransactionRetryNeeded(&quot;Transaction code called retry.&quot;)
+	}
+
+	/**
+	 * Runs a nested transaction inside this transaction.
+	 *
+	 * If a nested transaction fails, its modifications will not be seen by the parent transaction.
+	 *
+	 * @param {function} fn the transaction function.  This function may be run multiple times and should rethrow any TransactionRetryNeeded exceptions.
+	 * @returns {Promise&lt;*, Error&gt;} a promise that resolves to the result of the transaction function once the transaction submits or an error if it cannot.
+	 */
+	transact(fn) {
+		if (fn instanceof Function === false) {
+			throw new TypeError(&quot;Transaction argument must be a function.&quot;)
+		}
+		const nestedTransaction = new Transaction(this.connection, fn, this.onSuccess, this.onFail, this.cache)
+		this.connection.currentTransaction = nestedTransaction
+		let resultPromise = undefined
+		try {
+			resultPromise = Promise.resolve(fn(nestedTransaction))
+		} catch (e) {
+			if (e instanceof TransactionRetryNeeded) {
+				this.shouldRetry = true
+			}
+			this.connection.currentTransaction = this
+			throw e
+		}
+
+		return resultPromise
+			.then((result) =&gt; {
+				this.connection.currentTransaction = this
+				nestedTransaction.promoteCache(undefined)
+				return result
+			})
+	}
+
+	// private API
+
+	/** @private
+	 * Prepares this transaction to be run again.*/
+	reset() {
+		this.cache = this.parentCache.getTemporaryView()
+		this.shouldRetry = false
+	}
+
+	/** @private
+	 * This transaction has completed successfully, notify the parent.*/
+	promoteCache(finalTxnId) {
+		this.cache.promote(finalTxnId)
+	}
+
+	/** @private */
+	toMessage(txnId) {
+		const actions = this.cache.getActions(this.connection.namespace)
+		return {
+			ClientTxnSubmission: {
+				Id: txnId,
+				Retry: this.shouldRetry,
+				Actions: actions
+			}
+		}
+	}
+}
+
+module.exports = Transaction</code></pre>
+
+</div>
+
+<footer class="footer">
+  Generated by <a href="https://esdoc.org">ESDoc<span data-ice="esdocVersion">(0.5.2)</span><img src="./image/esdoc-logo-mini-black.png"></a>
+</footer>
+
+<script src="script/search_index.js"></script>
+<script src="script/search.js"></script>
+<script src="script/pretty-print.js"></script>
+<script src="script/inherited-summary.js"></script>
+<script src="script/test-summary.js"></script>
+<script src="script/inner-link.js"></script>
+<script src="script/patch-for-local.js"></script>
+</body>
+</html>

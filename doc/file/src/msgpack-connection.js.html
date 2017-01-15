@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <base data-ice="baseUrl" href="../../">
+  <title data-ice="title">src/msgpack-connection.js | API Document</title>
+  <link type="text/css" rel="stylesheet" href="css/style.css">
+  <link type="text/css" rel="stylesheet" href="css/prettify-tomorrow.css">
+  <script src="script/prettify/prettify.js"></script>
+  
+  
+  <script src="script/manual.js"></script>
+</head>
+<body class="layout-container" data-ice="rootContainer">
+
+<header>
+  <a href="./">Home</a>
+  
+  <a href="identifiers.html">Reference</a>
+  <a href="source.html">Source</a>
+  
+  <a data-ice="repoURL" href="https://github.com/kybernetikos/goshawkjs" class="repo-url-github">Repository</a>
+  <div class="search-box">
+  <span>
+    <img src="./image/search.png">
+    <span class="search-input-edge"></span><input class="search-input"><span class="search-input-edge"></span>
+  </span>
+    <ul class="search-result"></ul>
+  </div>
+</header>
+
+<nav class="navigation" data-ice="nav"><div>
+  <ul>
+    
+  <li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/errors.js~CapabilityDenied.html">CapabilityDenied</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/errors.js~MutationNotAllowed.html">MutationNotAllowed</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/errors.js~Throwable.html">Throwable</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/errors.js~TransactionRejectedError.html">TransactionRejectedError</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/errors.js~TransactionRetryNeeded.html">TransactionRetryNeeded</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/gos-connection.js~GosConnection.html">GosConnection</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/goshawk.js~Goshawk.html">Goshawk</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/ref.js~Ref.html">Ref</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/transaction.js~Transaction.html">Transaction</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/uint64.js~Uint64.html">Uint64</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-function">F</span><span data-ice="name"><span><a href="function/index.html#static-function-asPromise">asPromise</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-function">F</span><span data-ice="name"><span><a href="function/index.html#static-function-binaryToHex">binaryToHex</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-function">F</span><span data-ice="name"><span><a href="function/index.html#static-function-toArrayBuffer">toArrayBuffer</a></span></span></li>
+</ul>
+</div>
+</nav>
+
+<div class="content" data-ice="content"><h1 data-ice="title">src/msgpack-connection.js</h1>
+<pre class="source-code line-number raw-source-code"><code class="prettyprint linenums" data-ice="content">const msgpack = require(&apos;../lib/msgpack.min&apos;)
+const WebSocket = require(&apos;ws&apos;)
+
+/**
+ * The websocket and Msgpack connection.
+ * @private
+ */
+class MsgpackConnection {
+	constructor(url, connectionLabel = &quot;&quot;) {
+		this.url = url
+		// connectionLabel is purely used for logging.
+		this.connectionLabel = connectionLabel
+		this.websocket = null
+		this.options = {
+			codec: msgpack.createCodec({binarraybuffer: true})
+		}
+		// all the callbacks!
+		this.onOpen = null
+		this.onEnd = null
+		this.onMessage = null
+		this.onClose = null
+		this.onError = null
+	}
+
+	connect(onMessage, onEnd, onOpen, connectionOptions) {
+		this.onMessage = onMessage
+		// onEnd triggers onError or onClose.
+		this.onEnd = onEnd
+		this.onOpen = onOpen
+		const websocket = this.websocket = new WebSocket(this.url, undefined, connectionOptions)
+		websocket.binaryType = &apos;arraybuffer&apos;
+		websocket.onopen = (evt) =&gt; {
+			console.debug(`Connection ${this.connectionLabel}: Connection Open`)
+			if (this.onOpen) {
+				this.onOpen(evt)
+			}
+		}
+		websocket.onclose = (evt) =&gt; {
+			console.debug(`Connection ${this.connectionLabel}: Connection Closed`, evt.code, evt.reason)
+			if (this.onEnd) {
+				this.onEnd(evt)
+			}
+			if (this.onClose) {
+				this.onClose(evt)
+			}
+		}
+		websocket.onerror = (evt) =&gt; {
+			console.error(`Connection ${this.connectionLabel}: Connection Error`, evt.code, evt.reason)
+			if (this.onEnd) {
+				this.onEnd(evt)
+			}
+			if (this.onError) {
+				this.onError(evt)
+			}
+		}
+		websocket.onmessage = (messageEvent) =&gt; {
+			const data = msgpack.decode(new Uint8Array(messageEvent.data));
+			console.debug(`${this.connectionLabel} &lt;`, data)
+
+			if (this.onMessage) {
+				this.onMessage(data)
+			}
+		}
+	}
+
+	send(message) {
+		console.debug(`${this.connectionLabel} &gt;`, message)
+		this.websocket.send(msgpack.encode(message, this.options))
+	}
+
+	// sends a message, and returns a promise which resolves with the next message back from the server. This helps
+	// make a request/response pattern easy.  It replaces onMessage and onEnd until it receives the message.
+	request(message) {
+		const oldHandler = this.onMessage
+		const oldEndHandler = this.onEnd
+		return new Promise((resolve, reject) =&gt; {
+			this.onMessage = (msg) =&gt; {
+				resolve(msg)
+				this.onMessage = oldHandler
+				this.onEnd = oldEndHandler
+			}
+			this.onEnd = (evt) =&gt; {
+				this.onMessage = oldHandler
+				this.onEnd = oldEndHandler
+				reject(evt)
+				if (oldEndHandler) {
+					oldEndHandler(evt)
+				}
+			}
+			this.send(message)
+		})
+	}
+
+	close() {
+		this.websocket.close()
+	}
+}
+
+module.exports = MsgpackConnection</code></pre>
+
+</div>
+
+<footer class="footer">
+  Generated by <a href="https://esdoc.org">ESDoc<span data-ice="esdocVersion">(0.5.2)</span><img src="./image/esdoc-logo-mini-black.png"></a>
+</footer>
+
+<script src="script/search_index.js"></script>
+<script src="script/search.js"></script>
+<script src="script/pretty-print.js"></script>
+<script src="script/inherited-summary.js"></script>
+<script src="script/test-summary.js"></script>
+<script src="script/inner-link.js"></script>
+<script src="script/patch-for-local.js"></script>
+</body>
+</html>

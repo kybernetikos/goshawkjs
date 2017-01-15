@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <base data-ice="baseUrl" href="../../">
+  <title data-ice="title">src/ref.js | API Document</title>
+  <link type="text/css" rel="stylesheet" href="css/style.css">
+  <link type="text/css" rel="stylesheet" href="css/prettify-tomorrow.css">
+  <script src="script/prettify/prettify.js"></script>
+  
+  
+  <script src="script/manual.js"></script>
+</head>
+<body class="layout-container" data-ice="rootContainer">
+
+<header>
+  <a href="./">Home</a>
+  
+  <a href="identifiers.html">Reference</a>
+  <a href="source.html">Source</a>
+  
+  <a data-ice="repoURL" href="https://github.com/kybernetikos/goshawkjs" class="repo-url-github">Repository</a>
+  <div class="search-box">
+  <span>
+    <img src="./image/search.png">
+    <span class="search-input-edge"></span><input class="search-input"><span class="search-input-edge"></span>
+  </span>
+    <ul class="search-result"></ul>
+  </div>
+</header>
+
+<nav class="navigation" data-ice="nav"><div>
+  <ul>
+    
+  <li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/errors.js~CapabilityDenied.html">CapabilityDenied</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/errors.js~MutationNotAllowed.html">MutationNotAllowed</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/errors.js~Throwable.html">Throwable</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/errors.js~TransactionRejectedError.html">TransactionRejectedError</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/errors.js~TransactionRetryNeeded.html">TransactionRetryNeeded</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/gos-connection.js~GosConnection.html">GosConnection</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/goshawk.js~Goshawk.html">Goshawk</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/ref.js~Ref.html">Ref</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/transaction.js~Transaction.html">Transaction</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/uint64.js~Uint64.html">Uint64</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-function">F</span><span data-ice="name"><span><a href="function/index.html#static-function-asPromise">asPromise</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-function">F</span><span data-ice="name"><span><a href="function/index.html#static-function-binaryToHex">binaryToHex</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-function">F</span><span data-ice="name"><span><a href="function/index.html#static-function-toArrayBuffer">toArrayBuffer</a></span></span></li>
+</ul>
+</div>
+</nav>
+
+<div class="content" data-ice="content"><h1 data-ice="title">src/ref.js</h1>
+<pre class="source-code line-number raw-source-code"><code class="prettyprint linenums" data-ice="content">const {binaryToHex} = require(&apos;./utils&apos;)
+
+/**
+ * A Ref represents a pointer to an object in the database.
+ * Each Ref also carries with it some capabilities that determine
+ * which of the actions `read` and `write` can be done with that reference.
+ *
+ * You can get a Ref either by looking at the roots of the transaction,
+ * creating a new object or reading it from an objects references with
+ * {@link Transaction#read}.
+ */
+class Ref {
+	/** @private */
+	constructor(varId, read, write) {
+		if (varId instanceof Uint8Array == false) {
+			throw new TypeError(&quot;var id must be a uint8 array&quot;)
+		}
+
+		/**
+		 * The goshawkdb id of the object this reference refers to.
+		 * @private
+		 */
+		this.varId = varId
+
+		/**
+		 * Whether this reference can be used to read the object.
+		 * @type {boolean}
+		 */
+		this.read = read
+		/**
+		 * Whether this reference can be used to write the object.
+		 * @type {boolean}
+		 */
+		this.write = write
+	}
+
+	/** @private */
+	static fromCapRef(capability, varId) {
+		return new Ref(varId, capability.Read, capability.Write)
+	}
+
+	/** @private */
+	static fromMessage(msg) {
+		return Ref.fromCapRef(msg.Capability, msg.VarId)
+	}
+
+	/**
+	 * Checks to see if this reference and the other reference
+	 * refer to the same object in the database.
+	 * @param {Ref} otherRef
+	 * @returns {boolean} true if the other reference points to the same object, false otherwise.
+	 */
+	sameReferent(otherRef) {
+		return binaryToHex(this.varId) === binaryToHex(otherRef.varId)
+	}
+
+	/**
+	 * @returns {Ref} a new reference the same as this one, but that cannot be used to read.
+	 */
+	denyRead() {
+		return new Ref(this.varId, false, this.write)
+	}
+
+	/**
+	 * @returns {Ref} a new reference the same as this one, but that cannot be used to write.
+	 */
+	denyWrite() {
+		return new Ref(this.varId, this.read, false)
+	}
+
+	/** @returns {string} a representation of this reference.  String representations are for debug only and are not considered part of the public API. */
+	toString() {
+		return `{Ref ${binaryToHex(this.varId)} ${this.read ? &apos;r&apos; : &apos;-&apos;}${this.write ? &apos;w&apos; : &apos;-&apos;}}`
+	}
+
+	/** @private */
+	toMessage() {
+		return {VarId: this.varId.buffer, Capability: {Read: this.read, Write: this.write}}
+	}
+}
+
+module.exports = Ref</code></pre>
+
+</div>
+
+<footer class="footer">
+  Generated by <a href="https://esdoc.org">ESDoc<span data-ice="esdocVersion">(0.5.2)</span><img src="./image/esdoc-logo-mini-black.png"></a>
+</footer>
+
+<script src="script/search_index.js"></script>
+<script src="script/search.js"></script>
+<script src="script/pretty-print.js"></script>
+<script src="script/inherited-summary.js"></script>
+<script src="script/test-summary.js"></script>
+<script src="script/inner-link.js"></script>
+<script src="script/patch-for-local.js"></script>
+</body>
+</html>

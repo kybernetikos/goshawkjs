@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <base data-ice="baseUrl" href="../../">
+  <title data-ice="title">src/uint64.js | API Document</title>
+  <link type="text/css" rel="stylesheet" href="css/style.css">
+  <link type="text/css" rel="stylesheet" href="css/prettify-tomorrow.css">
+  <script src="script/prettify/prettify.js"></script>
+  
+  
+  <script src="script/manual.js"></script>
+</head>
+<body class="layout-container" data-ice="rootContainer">
+
+<header>
+  <a href="./">Home</a>
+  
+  <a href="identifiers.html">Reference</a>
+  <a href="source.html">Source</a>
+  
+  <a data-ice="repoURL" href="https://github.com/kybernetikos/goshawkjs" class="repo-url-github">Repository</a>
+  <div class="search-box">
+  <span>
+    <img src="./image/search.png">
+    <span class="search-input-edge"></span><input class="search-input"><span class="search-input-edge"></span>
+  </span>
+    <ul class="search-result"></ul>
+  </div>
+</header>
+
+<nav class="navigation" data-ice="nav"><div>
+  <ul>
+    
+  <li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/errors.js~CapabilityDenied.html">CapabilityDenied</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/errors.js~MutationNotAllowed.html">MutationNotAllowed</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/errors.js~Throwable.html">Throwable</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/errors.js~TransactionRejectedError.html">TransactionRejectedError</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/errors.js~TransactionRetryNeeded.html">TransactionRetryNeeded</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/gos-connection.js~GosConnection.html">GosConnection</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/goshawk.js~Goshawk.html">Goshawk</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/ref.js~Ref.html">Ref</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/transaction.js~Transaction.html">Transaction</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/uint64.js~Uint64.html">Uint64</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-function">F</span><span data-ice="name"><span><a href="function/index.html#static-function-asPromise">asPromise</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-function">F</span><span data-ice="name"><span><a href="function/index.html#static-function-binaryToHex">binaryToHex</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-function">F</span><span data-ice="name"><span><a href="function/index.html#static-function-toArrayBuffer">toArrayBuffer</a></span></span></li>
+</ul>
+</div>
+</nav>
+
+<div class="content" data-ice="content"><h1 data-ice="title">src/uint64.js</h1>
+<pre class="source-code line-number raw-source-code"><code class="prettyprint linenums" data-ice="content">const {binaryToHex, toArrayBuffer} = require(&apos;./utils&apos;)
+
+/**
+ * A representation of a Uint64, since otherwise javascript can&apos;t do them.
+ */
+class Uint64 {
+	/**
+	 * Makes a new Uint64 from a Uint8Array
+	 * @param {Uint8Array} uintArray an array of bytes to be used to represent this 64 bit integer.
+	 */
+	constructor(uintArray = new Uint8Array(8)) {
+		if (uintArray instanceof Uint8Array === false) {
+			throw new TypeError(&quot;Uint64 source must be a Uint8Array, Uint64.from(bytes), Uint64.fromTypedArray, Uint64.fromArrayBuffer might suit your needs better.&quot;)
+		}
+		/**
+		 * @private
+		 * @type {Uint8Array}
+		 */
+		this.data = uintArray
+
+		/**
+		 * An arraybuffer representation of this value.
+		 * @type {ArrayBuffer}
+		 */
+		this.buffer = this.data.buffer
+	}
+
+	/**
+	 * Creates a Uint64 from bytes
+	 * @param {number[]} bytes
+	 * @returns {Uint64}
+	 */
+	static from(...bytes) {
+		const result = new Uint64()
+		result.set(...bytes)
+		return result
+	}
+
+	/**
+	 * Creates a Uint64 from the first 8 bytes of one of the binary forms.
+	 * @param {ArrayBuffer|Buffer|TypedArray} binary
+	 * @returns {Uint64}
+	 */
+	static fromBinary(binary) {
+		return Uint64.fromArrayBuffer(toArrayBuffer(binary))
+	}
+
+	/**
+	 * Creates a Uint64 from an array buffer. Potentially with a byte offset.
+	 * Only the first 8 bytes will be taken.
+	 * @param {ArrayBuffer} arrayBuffer
+	 * @param {number} byteOffset the starting position in the array buffer. Defaults to 0.
+	 * @returns {Uint64}
+	 */
+	static fromArrayBuffer(arrayBuffer, byteOffset = 0) {
+		return new Uint64(new Uint8Array(arrayBuffer.slice(byteOffset, byteOffset + 8)))
+	}
+
+	/**
+	 * Modifies this Uint64 to represent the succeeding integer.  If
+	 * this represents the largest integer the Uint64 can represent, it will wrap to 0.
+	 * @returns {Uint64} this, modified Uint64.
+	 */
+	inc() {
+		for (let idx = this.data.length - 1; idx &gt;= 0; --idx) {
+			this.data[idx] += 1
+			if (this.data[idx] != 0) {
+				break
+			}
+		}
+		return this
+	}
+
+	/**
+	 * @returns {Uint64} a copy of this Uint64.
+	 */
+	clone() {
+		const dst = new ArrayBuffer(this.data.byteLength)
+		const uintArray = new Uint8Array(dst)
+		uintArray.set(this.data)
+		return new Uint64(uintArray)
+	}
+
+	/**
+	 * Set the last last bytes.length bytes.
+	 * @param {number[]} bytes the bytes to set.
+	 */
+	set(...bytes) {
+		if (bytes[0] instanceof Uint64) {
+			this.data.set(bytes[0].data, 0)
+		} else {
+			for (let i = 0; i &lt; bytes.length; ++i) {
+				this.data[this.data.length - bytes.length + i] = bytes[i]
+			}
+		}
+	}
+
+	/**
+	 * Returns an array buffer where this Uint64 is the first 8 bytes and
+	 * the passed buffer is the subsequent bytes.
+	 * @param {ArrayBuffer|Buffer|TypedArray} buffer the subsequent bytes.
+	 * @returns {ArrayBuffer}
+	 */
+	concat(buffer) {
+		buffer = toArrayBuffer(buffer)
+		const result = new Uint8Array(this.data.length + buffer.byteLength)
+		result.set(this.data, 0)
+		result.set(new Uint8Array(buffer), this.data.length)
+		return result.buffer
+	}
+
+	/**
+	 * A string representation of this Uint64.  This string representation is for debugging purposes
+	 * and does not form part of the public API.
+	 */
+	toString() {
+		return binaryToHex(this.data)
+	}
+}
+
+module.exports = Uint64</code></pre>
+
+</div>
+
+<footer class="footer">
+  Generated by <a href="https://esdoc.org">ESDoc<span data-ice="esdocVersion">(0.5.2)</span><img src="./image/esdoc-logo-mini-black.png"></a>
+</footer>
+
+<script src="script/search_index.js"></script>
+<script src="script/search.js"></script>
+<script src="script/pretty-print.js"></script>
+<script src="script/inherited-summary.js"></script>
+<script src="script/test-summary.js"></script>
+<script src="script/inner-link.js"></script>
+<script src="script/patch-for-local.js"></script>
+</body>
+</html>

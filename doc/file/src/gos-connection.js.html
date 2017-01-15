@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <base data-ice="baseUrl" href="../../">
+  <title data-ice="title">src/gos-connection.js | API Document</title>
+  <link type="text/css" rel="stylesheet" href="css/style.css">
+  <link type="text/css" rel="stylesheet" href="css/prettify-tomorrow.css">
+  <script src="script/prettify/prettify.js"></script>
+  
+  
+  <script src="script/manual.js"></script>
+</head>
+<body class="layout-container" data-ice="rootContainer">
+
+<header>
+  <a href="./">Home</a>
+  
+  <a href="identifiers.html">Reference</a>
+  <a href="source.html">Source</a>
+  
+  <a data-ice="repoURL" href="https://github.com/kybernetikos/goshawkjs" class="repo-url-github">Repository</a>
+  <div class="search-box">
+  <span>
+    <img src="./image/search.png">
+    <span class="search-input-edge"></span><input class="search-input"><span class="search-input-edge"></span>
+  </span>
+    <ul class="search-result"></ul>
+  </div>
+</header>
+
+<nav class="navigation" data-ice="nav"><div>
+  <ul>
+    
+  <li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/errors.js~CapabilityDenied.html">CapabilityDenied</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/errors.js~MutationNotAllowed.html">MutationNotAllowed</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/errors.js~Throwable.html">Throwable</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/errors.js~TransactionRejectedError.html">TransactionRejectedError</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/errors.js~TransactionRetryNeeded.html">TransactionRetryNeeded</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/gos-connection.js~GosConnection.html">GosConnection</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/goshawk.js~Goshawk.html">Goshawk</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/ref.js~Ref.html">Ref</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/transaction.js~Transaction.html">Transaction</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/uint64.js~Uint64.html">Uint64</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-function">F</span><span data-ice="name"><span><a href="function/index.html#static-function-asPromise">asPromise</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-function">F</span><span data-ice="name"><span><a href="function/index.html#static-function-binaryToHex">binaryToHex</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-function">F</span><span data-ice="name"><span><a href="function/index.html#static-function-toArrayBuffer">toArrayBuffer</a></span></span></li>
+</ul>
+</div>
+</nav>
+
+<div class="content" data-ice="content"><h1 data-ice="title">src/gos-connection.js</h1>
+<pre class="source-code line-number raw-source-code"><code class="prettyprint linenums" data-ice="content">const MsgpackConnection = require(&apos;./msgpack-connection&apos;)
+const Uint64 = require(&apos;./uint64&apos;)
+const Transaction = require(&apos;./transaction&apos;)
+const Ref = require(&apos;./ref&apos;)
+const {TransactionRetryNeeded, TransactionRejectedError} = require(&apos;./errors&apos;)
+const ObjectCache = require(&apos;./objectcache&apos;)
+const {binaryToHex, asPromise} = require(&apos;./utils&apos;)
+
+let nextConnectionNumber = 0
+
+/**
+ * GosConnections represent the connection to the GoshawkDB.
+ *
+ * They should be acquired through the static {@link Goshawk.connect} function.
+ */
+class GosConnection {
+	/** @private */
+	constructor(url) {
+		/** @private used in logging to distinguish different connections */
+		this.connectionId = (nextConnectionNumber++)
+		/** @private */
+		this.link = new MsgpackConnection(url, (&quot;000&quot; + this.connectionId).substr(-3))
+
+		/**
+		 * The product and version information we sent to the server during the initial connection handshake.
+		 * @type {{Product: string, Version: string}}
+		 */
+		this.clientInfo = {Product: &quot;GoshawkDB&quot;, Version: &quot;dev&quot;}
+
+		/**
+		 * The product and version information we receive from the server during the initial handshake,
+		 * or null if it hasn&apos;t occurred yet.
+		 * @type {?{Product: string, Version: string}}
+		 */
+		this.serverInfo = null
+
+		/**
+		 * The namespace that the server assigns to this client.
+		 * @type {?ArrayBuffer}
+		 */
+		this.namespace = null
+
+		/**
+		 * The roots that this client has access to.
+		 * Provided by the server during handshake.
+		 * @type {*}
+		 */
+		this.roots = {}
+
+		/** @private the function to deal with incoming messages */
+		this.messageHandler = null
+		/** @private the top level cache that stores all the values and refs for objects the client knows about. */
+		this.cache = null
+
+		// we control the first 8 bytes of transaction ids and new object ids (used during creation).
+		// the namespace is appended to them when actually sent to the server.  We can&apos;t use normal js
+		// numbers as javascript doesn&apos;t support 64 integers.  The only actual operation we need is &apos;increment&apos;.
+		/** @private */
+		this.nextTransactionId = Uint64.from(0, 0, 0, 0, 0, 0, 0, 0)
+		/** @private */
+		this.nextNewObjectId = Uint64.from(0, 0, 0, 0, 0, 0, 0, 0)
+
+		/** @private the queue of transactions.*/
+		this.transactions = []
+		/** @private the transaction currently being processed.*/
+		this.currentTransaction = null
+		/** @private the timeout handle or null if no timeout to process a transaction is waiting*/
+		this.scheduledCallback = null
+	}
+
+	/**
+	 * Connects to the server.  If running in node, you will need to provide connectionOptions that include the client
+	 * certificate and key.
+	 *
+	 * @return {Promise&lt;GosConnection, Error&gt;}
+	 */
+	connect(connectionOptions) {
+		const serverHelloHandler = (message) =&gt; {
+			// TODO? : a check could go here to ensure that the server version matches our version (from this.clientInfo.Version).
+			this.serverInfo = message
+			this.messageHandler = rootsHandler
+		}
+
+		const rootsHandler = (message) =&gt; {
+			// populate the roots
+			this.roots = {}
+			for (const root of message.Roots) {
+				this.roots[root.Name] = Ref.fromMessage(root)
+			}
+			// set the namespace
+			this.namespace = message.Namespace
+
+			// now we&apos;re properly connected
+			this.messageHandler = null
+			this.cache = new ObjectCache(this.namespace)
+			console.info(`Connection ${this.connectionId}: Connected to goshawk`, this.serverInfo, this.clientInfo, this.namespace, this.roots)
+			this._onConnectionNegotiated(this)
+		}
+
+		// This promise should resolve with a working, setup connection if the connection makes its way to a fully
+		// negotiated connection: i.e. it connects, it swaps info, it loads the roots and the namespace and initialises the
+		// relevant state.
+		// If anything happens to disrupt this process before it completes, this promise will reject.
+		return new Promise((resolve, reject) =&gt; {
+			this._onConnectionNegotiated = resolve
+			this.messageHandler = serverHelloHandler
+			this.link.connect(
+				// on message
+				(data) =&gt; {
+					if (this.messageHandler) {
+						this.messageHandler(data)
+					} else {
+						console.warn(`Connection ${this.connectionId}: No handler found for message`, data)
+					}
+				},
+				// on end - if the connection stops for any reason (error, or deliberate) before it resolves then it rejects.
+				(e) =&gt; reject(e),
+				// on open we start the handshake by sending the client info.
+				() =&gt; this.link.send(this.clientInfo),
+				connectionOptions
+			)
+		})
+	}
+
+	/**
+	 * Queues a transaction for running, then ensures that transaction processing is happening.
+	 * The returned promise resolves with the value returned by the fn once the transaction has committed.  The fn may be
+	 * run multiple times and so should avoid side effects.
+	 * fn may be an asynchronous or a synchronous function.
+	 *
+	 * @param {function(txn: Transaction): {*|Promise&lt;*, Error&gt;}}} fn the transaction function.  This function may be run multiple times and should rethrow any TransactionRetryNeeded exceptions.
+	 * @returns {Promise&lt;*, Error&gt;} a promise that resolves to the result of the transaction function once the transaction submits or an error if it cannot.
+ 	 */
+	transact(fn) {
+		if (fn instanceof Function === false) {
+			throw new TypeError(`Connection ${this.connectionId}: Transaction argument must be a function, was ${String(fn)}`)
+		}
+
+		return new Promise((resolve, reject) =&gt; {
+			this.transactions.push(new Transaction(this, fn, resolve, reject, this.cache, this.namespace))
+			this.scheduleNextTransaction()
+		})
+	}
+
+	/**
+	 * Closes the underlying link.
+	 */
+	close() {
+		this.link.close()
+	}
+
+	// private api
+
+	/** @private
+	 * Gets the object id to use for the next `txn.create` and increments the counter.
+	 * @returns {Uint8Array}
+	 */
+	getNewObjectId() {
+		const objId = this.nextNewObjectId.concat(this.namespace)
+		this.nextNewObjectId.inc()
+		return new Uint8Array(objId)
+	}
+
+	/** @private
+	 * Actually runs the next queued transaction.
+	 */
+	executeNextTransaction() {
+		if (this.currentTransaction != null) {
+			// we&apos;re currently processing a transaction, exit without doing anything.
+			return
+		}
+
+		const currentTransaction = this.currentTransaction = this.transactions.shift()
+		const txnIdWithNamespace = this.nextTransactionId.concat(this.namespace)
+
+		const succeed = (finalId, transactionResult) =&gt; {
+			if (finalId) {
+				currentTransaction.promoteCache(finalId)
+			}
+			currentTransaction.onSuccess(transactionResult)
+			this.scheduleNextTransaction(true)
+		}
+		const retry = () =&gt; {
+			currentTransaction.reset()
+			this.transactions.unshift(currentTransaction)
+			this.scheduleNextTransaction(true)
+		}
+		const fail = (err) =&gt; {
+			currentTransaction.onFail(err)
+			this.scheduleNextTransaction(true)
+		}
+		const sendTransaction = (result) =&gt; {
+			const transactionMessage = currentTransaction.toMessage(txnIdWithNamespace)
+			if (transactionMessage.ClientTxnSubmission.Actions.length &gt; 0) {
+				this.link.request(transactionMessage)
+					.then((response) =&gt; {
+						this.updateFromTransactionResponse(response)
+						const outcome = response.ClientTxnOutcome
+						if (outcome.Commit) {
+							succeed(outcome.FinalId, result)
+						} else if (outcome.Error != &quot;&quot;) {
+							fail(new TransactionRejectedError(outcome.Error))
+						} else if (outcome.Abort) {
+							retry()
+						} else {
+							fail(&quot;Unknown response message &quot; + JSON.stringify(outcome))
+						}
+					}).catch(fail)
+			} else {
+				succeed(undefined, result)
+			}
+		}
+
+		// we use asPromise, since the result of running fn might be a Promise.
+		asPromise(() =&gt; {
+			return currentTransaction.fn(currentTransaction)
+		}).catch( (e) =&gt; {
+			if (e instanceof TransactionRetryNeeded === false) {
+				throw e
+			}
+		}).then(sendTransaction, fail)
+	}
+
+	/** @private
+	 * Updates the top level connection cache and counters based on a response from the server.
+	 * @param response the msgpack response.
+	 */
+	updateFromTransactionResponse(response) {
+		// Responses contain a final transaction id.  We take the first 8 bytes and increment it.
+		this.nextTransactionId = Uint64.fromBinary(response.ClientTxnOutcome.FinalId).inc()
+		// If we received an Abort message, then we may also have received some cache update instructions.
+		if (response.ClientTxnOutcome.Abort) {
+			for (let update of response.ClientTxnOutcome.Abort) {
+				const otherTxnId = update.Version.buffer
+				for (let action of update.Actions) {
+					const id = action.VarId
+					if (action.Delete) {
+						console.debug(`Connection ${this.connectionId}: Removing ${binaryToHex(id)} from cache.`)
+						this.cache.remove(id)
+					} else {
+						const writeData = action.Write || action.Create
+						if (writeData) {
+							this.cache.get(id).update(otherTxnId, writeData.Value.buffer, writeData.References.map(Ref.fromMessage))
+						}
+					}
+				}
+			}
+		}
+	}
+
+	/** @private
+	 * If there is no transaction currently processing and we haven&apos;t scheduled one
+	 * and there is a transaction waiting to be processed, then schedule it.
+	 * @param {boolean} clearCurrentTransaction if true, this will first clear the current transaction.
+	 */
+	scheduleNextTransaction(clearCurrentTransaction) {
+		if (clearCurrentTransaction) {
+			this.currentTransaction = null
+		}
+		if (this.scheduledCallback == null &amp;&amp; this.currentTransaction == null &amp;&amp; this.transactions.length &gt; 0) {
+			this.scheduledCallback = setTimeout(() =&gt; {
+				this.scheduledCallback = null
+				this.executeNextTransaction()
+			}, 0)
+		}
+	}
+}
+
+module.exports = GosConnection</code></pre>
+
+</div>
+
+<footer class="footer">
+  Generated by <a href="https://esdoc.org">ESDoc<span data-ice="esdocVersion">(0.5.2)</span><img src="./image/esdoc-logo-mini-black.png"></a>
+</footer>
+
+<script src="script/search_index.js"></script>
+<script src="script/search.js"></script>
+<script src="script/pretty-print.js"></script>
+<script src="script/inherited-summary.js"></script>
+<script src="script/test-summary.js"></script>
+<script src="script/inner-link.js"></script>
+<script src="script/patch-for-local.js"></script>
+</body>
+</html>

@@ -57,7 +57,7 @@ function testAndIncrement(number) {
 	}
 }
 
-test.only("Nested transactions can retry.",
+test("Nested transactions can retry.",
 	setupThenTest(
 		transactionTest((t, connection, txn) => txn.write(firstRoot(txn), Buffer.from([0]), [])),
 		transactionTest((t, connection, txn) => {

@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <base data-ice="baseUrl" href="../../">
+  <title data-ice="title">src/objectcache.js | API Document</title>
+  <link type="text/css" rel="stylesheet" href="css/style.css">
+  <link type="text/css" rel="stylesheet" href="css/prettify-tomorrow.css">
+  <script src="script/prettify/prettify.js"></script>
+  
+  
+  <script src="script/manual.js"></script>
+</head>
+<body class="layout-container" data-ice="rootContainer">
+
+<header>
+  <a href="./">Home</a>
+  
+  <a href="identifiers.html">Reference</a>
+  <a href="source.html">Source</a>
+  
+  <a data-ice="repoURL" href="https://github.com/kybernetikos/goshawkjs" class="repo-url-github">Repository</a>
+  <div class="search-box">
+  <span>
+    <img src="./image/search.png">
+    <span class="search-input-edge"></span><input class="search-input"><span class="search-input-edge"></span>
+  </span>
+    <ul class="search-result"></ul>
+  </div>
+</header>
+
+<nav class="navigation" data-ice="nav"><div>
+  <ul>
+    
+  <li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/errors.js~CapabilityDenied.html">CapabilityDenied</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/errors.js~MutationNotAllowed.html">MutationNotAllowed</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/errors.js~Throwable.html">Throwable</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/errors.js~TransactionRejectedError.html">TransactionRejectedError</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/errors.js~TransactionRetryNeeded.html">TransactionRetryNeeded</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/gos-connection.js~GosConnection.html">GosConnection</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/goshawk.js~Goshawk.html">Goshawk</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/ref.js~Ref.html">Ref</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/transaction.js~Transaction.html">Transaction</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/uint64.js~Uint64.html">Uint64</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-function">F</span><span data-ice="name"><span><a href="function/index.html#static-function-asPromise">asPromise</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-function">F</span><span data-ice="name"><span><a href="function/index.html#static-function-binaryToHex">binaryToHex</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-function">F</span><span data-ice="name"><span><a href="function/index.html#static-function-toArrayBuffer">toArrayBuffer</a></span></span></li>
+</ul>
+</div>
+</nav>
+
+<div class="content" data-ice="content"><h1 data-ice="title">src/objectcache.js</h1>
+<pre class="source-code line-number raw-source-code"><code class="prettyprint linenums" data-ice="content">const {binaryToHex, toArrayBuffer} = require(&apos;./utils&apos;)
+const {TransactionRetryNeeded, MutationNotAllowed} = require(&apos;./errors&apos;)
+const Uint64 = require(&apos;./uint64&apos;)
+const Ref = require(&apos;./ref&apos;)
+
+function checkRefs(refs) {
+	for (let i = 0; i &lt; refs.length; ++i) {
+		const ref = refs[i]
+		if (ref instanceof Ref === false) {
+			throw new TypeError(`Reference ${i} was not of reference type - was a ${ref.constructor.name} : ${ref.toString()}`)
+		}
+	}
+}
+
+/**
+ * The top level object cache. It keeps objects value and refs stored against their id.
+ * @private
+ */
+class ObjectCache {
+	constructor() {
+		this.objects = new Map()
+	}
+
+	get(id) {
+		const hashable = binaryToHex(id)
+		if (!this.objects.has(hashable)) {
+			this.objects.set(hashable, new ObjectCacheEntry(id))
+		}
+		return this.objects.get(hashable)
+	}
+
+	remove(id) {
+		const hashable = binaryToHex(id)
+		if (!this.objects.has(hashable)) {
+			throw new Error(`Unexpected remove of id ${hashable}`)
+		}
+		this.objects.delete(hashable)
+	}
+
+	getTemporaryView() {
+		return new CopyCache(this)
+	}
+}
+
+module.exports = ObjectCache
+
+// An ObjectCacheEntry represents the clients knowledge about a GoshawkDB Object.
+//  - It should always have an id.
+//  - If it contains values known to have been in the database (either they have been sent in a cache update, or a
+//    create/write that has been acknowledged.  The values version and data.value and data.refs will be set.
+//	- data.refs and data.value will be set after a write or create.
+class ObjectCacheEntry {
+	constructor(id) {
+		if (id instanceof Uint8Array == false) {
+			throw new TypeError(`id must be a uint8, was ${String(id)}`)
+		}
+		this.id = id
+
+		this.version = null
+		this.data = {
+			value: null,
+			refs: null
+		}
+
+		// best effort attempt to restrict mutations in the data I return to the user.
+		this.readOnlyData = Object.create({}, {
+			value: {
+				set: () =&gt; { throw new MutationNotAllowed(&quot;Cannot set value without a transaction.write call.&quot;) },
+				get: () =&gt; { return this.data.value }
+			},
+			refs: {
+				set: () =&gt; { throw new MutationNotAllowed(&quot;Cannot set references without a transaction.write call.&quot;) },
+				get: () =&gt; {
+					const srcRefs = this.data.refs
+					if (global.Proxy) {
+						return new Proxy(srcRefs, {set: () =&gt; {throw new MutationNotAllowed(&quot;Cannot change references without a transaction.write call.&quot;)}})
+					} else {
+						return srcRefs.slice()
+					}
+				}
+			}
+		})
+
+		// Record which actions have occurred on this object from the client.
+		// These are only needed on objects within a transactions cache, not at the top level.
+		//  - If something has been written or created, calling read on it has no effect (it is answered from cache).
+		//  - If something has been created, calling write on it has no effect (the create is merely updated to the contents of the write).
+		this.hasBeenWritten = false
+		this.hasBeenRead = false
+		this.hasBeenCreated = false
+	}
+
+	// Updates representing version, value and refs are they are in the remote database.  Can populate on an abort or a submit.
+	update(version, value, refs) {
+		value = toArrayBuffer(value)
+		checkRefs(refs)
+		this.data.value = value
+		this.data.refs = refs
+		this.version = toArrayBuffer(version)
+	}
+
+	read() {
+		if (!this.hasBeenWritten &amp;&amp; !this.hasBeenCreated) {
+			this.hasBeenRead = true
+		}
+		if (this.hasBeenCreated || this.hasBeenWritten || this.version != null) {
+			return this.readOnlyData
+		}
+
+		throw new TransactionRetryNeeded(`Object ${binaryToHex(this.id)} not present in cache`)
+	}
+
+	write(value, refs) {
+		value = toArrayBuffer(value)
+		checkRefs(refs)
+		if (!this.hasBeenCreated) {
+			this.hasBeenWritten = true
+		}
+		this.data.value = value
+		this.data.refs = refs
+	}
+
+	create(value, refs) {
+		if (value instanceof ArrayBuffer != true) {
+			throw new TypeError(&quot;values should be array buffers : &quot; + value)
+		}
+		checkRefs(refs)
+		this.hasBeenCreated = true
+		this.data.value = value
+		this.data.refs = refs
+	}
+
+	clone() {
+		return new ObjectCacheEntry(this.id).copyFrom(this)
+	}
+
+	copyFrom(otherEntry) {
+		this.version = otherEntry.version
+		this.data.value = otherEntry.data.value
+		this.data.refs = otherEntry.data.refs
+		this.hasBeenRead = otherEntry.hasBeenRead
+		this.hasBeenWritten = otherEntry.hasBeenWritten
+		this.hasBeenCreated = otherEntry.hasBeenCreated
+		return this
+	}
+
+	toAction(initialVersion) {
+		const result = {
+			VarId: this.id.buffer,
+		}
+		const refMessages = this.data.refs ? this.data.refs.map((ref) =&gt; ref.toMessage()) : []
+
+		if (this.hasBeenRead &amp;&amp; !this.hasBeenWritten) {
+			result.Read = {Version: this.version || initialVersion}
+		} else if (this.hasBeenWritten &amp;&amp; !this.hasBeenRead) {
+			result.Write = {Value: this.data.value, References: refMessages}
+		} else if (this.hasBeenWritten &amp;&amp; this.hasBeenRead) {
+			result.ReadWrite = {Version: this.version, Value: this.data.value, References: refMessages}
+		} else if (this.hasBeenCreated) {
+			result.Create = {Value: this.data.value, References: refMessages}
+		} else {
+			throw new Error(`No read or write has occurred on object ${this.id}, cannot form an action.`)
+		}
+		return result
+	}
+}
+
+class CopyCache {
+	constructor(parentCache) {
+		this.parentCache = parentCache
+		this.objects = new Map()
+	}
+
+	get(id) {
+		const hashable = binaryToHex(id)
+		if (!this.objects.has(hashable)) {
+			this.objects.set(hashable, this.parentCache.get(id).clone())
+		}
+		return this.objects.get(hashable)
+	}
+
+	promote(finalTxnId) {
+		for (let [, entry] of this.objects) {
+			const parentEntry = this.parentCache.get(entry.id)
+			if (finalTxnId) {
+				// if we are given a transaction id, then this promotion should be treated like a cache update from the server.
+				if (entry.hasBeenCreated || entry.hasBeenWritten) {
+					parentEntry.update(finalTxnId, entry.data.value, entry.data.refs)
+				}
+			} else {
+				// otherwise, it&apos;s a nested transaction completing, so we do a full copy into the parent.
+				parentEntry.copyFrom(entry)
+			}
+		}
+	}
+
+	getActions(namespace) {
+		const actions = []
+		// the version to ask for if we don&apos;t currently have any data in the cache for an object.
+		const initialVersion = Uint64.from(0, 0, 0, 0, 0, 0, 0, 0).concat(namespace)
+
+		for (let [,cacheEntry] of this.objects) {
+			if (cacheEntry.hasBeenRead || cacheEntry.hasBeenWritten || cacheEntry.hasBeenCreated) {
+				actions.push(cacheEntry.toAction(initialVersion))
+			}
+		}
+
+		return actions
+	}
+
+	getTemporaryView() {
+		return new CopyCache(this)
+	}
+}</code></pre>
+
+</div>
+
+<footer class="footer">
+  Generated by <a href="https://esdoc.org">ESDoc<span data-ice="esdocVersion">(0.5.2)</span><img src="./image/esdoc-logo-mini-black.png"></a>
+</footer>
+
+<script src="script/search_index.js"></script>
+<script src="script/search.js"></script>
+<script src="script/pretty-print.js"></script>
+<script src="script/inherited-summary.js"></script>
+<script src="script/test-summary.js"></script>
+<script src="script/inner-link.js"></script>
+<script src="script/patch-for-local.js"></script>
+</body>
+</html>
