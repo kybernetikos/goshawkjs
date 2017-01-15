@@ -2,7 +2,7 @@ const test = require('ava')
 const goshawkjs = require('../..')
 const {setupThenTransactionTest, firstRoot} = require('../helpers/utils')
 
-test("Capabilities are enforced.",
+test.only("Capabilities are enforced.",
 	setupThenTransactionTest(
 		(t, connection, txn) => {
 			const root = firstRoot(txn)

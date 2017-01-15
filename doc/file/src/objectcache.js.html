@@ -54,6 +54,7 @@
 const {TransactionRetryNeeded, MutationNotAllowed} = require(&apos;./errors&apos;)
 const Uint64 = require(&apos;./uint64&apos;)
 const Ref = require(&apos;./ref&apos;)
+const Goshawk = require(&apos;./goshawk&apos;)
 
 function checkRefs(refs) {
 	for (let i = 0; i &lt; refs.length; ++i) {
@@ -116,22 +117,40 @@ class ObjectCacheEntry {
 
 		// best effort attempt to restrict mutations in the data I return to the user.
 		this.readOnlyData = Object.create({}, {
-			value: {
-				set: () =&gt; { throw new MutationNotAllowed(&quot;Cannot set value without a transaction.write call.&quot;) },
-				get: () =&gt; { return this.data.value }
-			},
-			refs: {
-				set: () =&gt; { throw new MutationNotAllowed(&quot;Cannot set references without a transaction.write call.&quot;) },
-				get: () =&gt; {
-					const srcRefs = this.data.refs
-					if (global.Proxy) {
-						return new Proxy(srcRefs, {set: () =&gt; {throw new MutationNotAllowed(&quot;Cannot change references without a transaction.write call.&quot;)}})
-					} else {
-						return srcRefs.slice()
+				value: {
+					set: () =&gt; {
+						throw new MutationNotAllowed(&quot;Cannot set value without a transaction.write call.&quot;)
+					},
+					get: () =&gt; {
+						return this.data.value
+					}
+				},
+				refs: {
+					set: () =&gt; {
+						throw new MutationNotAllowed(&quot;Cannot set references without a transaction.write call.&quot;)
+					},
+					get: () =&gt; {
+						const srcRefs = this.data.refs
+						if (global.Proxy) {
+							return new Proxy(srcRefs, {
+								set: () =&gt; {
+									throw new MutationNotAllowed(&quot;Cannot change references without a transaction.write call.&quot;)
+								}
+							})
+						} else {
+							return srcRefs.slice()
+						}
+					}
+				},
+				version: {
+					set: () =&gt; {
+						throw new MutationNotAllowed(&quot;Cannot set references without a transaction.write call.&quot;)
+					},
+					get: () =&gt; {
+						return this.version
 					}
 				}
-			}
-		})
+			})
 
 		// Record which actions have occurred on this object from the client.
 		// These are only needed on objects within a transactions cache, not at the top level.

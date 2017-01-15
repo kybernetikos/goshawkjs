@@ -2,6 +2,7 @@ const {binaryToHex, toArrayBuffer} = require('./utils')
 const {TransactionRetryNeeded, MutationNotAllowed} = require('./errors')
 const Uint64 = require('./uint64')
 const Ref = require('./ref')
+const Goshawk = require('./goshawk')
 
 function checkRefs(refs) {
 	for (let i = 0; i < refs.length; ++i) {
@@ -64,22 +65,40 @@ class ObjectCacheEntry {
 
 		// best effort attempt to restrict mutations in the data I return to the user.
 		this.readOnlyData = Object.create({}, {
-			value: {
-				set: () => { throw new MutationNotAllowed("Cannot set value without a transaction.write call.") },
-				get: () => { return this.data.value }
-			},
-			refs: {
-				set: () => { throw new MutationNotAllowed("Cannot set references without a transaction.write call.") },
-				get: () => {
-					const srcRefs = this.data.refs
-					if (global.Proxy) {
-						return new Proxy(srcRefs, {set: () => {throw new MutationNotAllowed("Cannot change references without a transaction.write call.")}})
-					} else {
-						return srcRefs.slice()
+				value: {
+					set: () => {
+						throw new MutationNotAllowed("Cannot set value without a transaction.write call.")
+					},
+					get: () => {
+						return this.data.value
+					}
+				},
+				refs: {
+					set: () => {
+						throw new MutationNotAllowed("Cannot set references without a transaction.write call.")
+					},
+					get: () => {
+						const srcRefs = this.data.refs
+						if (global.Proxy) {
+							return new Proxy(srcRefs, {
+								set: () => {
+									throw new MutationNotAllowed("Cannot change references without a transaction.write call.")
+								}
+							})
+						} else {
+							return srcRefs.slice()
+						}
+					}
+				},
+				version: {
+					set: () => {
+						throw new MutationNotAllowed("Cannot set references without a transaction.write call.")
+					},
+					get: () => {
+						return this.version
 					}
 				}
-			}
-		})
+			})
 
 		// Record which actions have occurred on this object from the client.
 		// These are only needed on objects within a transactions cache, not at the top level.
