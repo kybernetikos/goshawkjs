@@ -13,6 +13,12 @@
 	<div id="container"></div>
 	<div id="info"></div>
 	<script>
+
+	const params = window.location.search.substring(1).split('&').map((x) => x.split('=')).reduce((curr, [key, value  = true]) => {curr[key] = value; return curr}, {
+		host: "localhost",
+		port: 9999
+	})
+
 	let selectedNodeId = null
 	const graph = Viva.Graph.graph()
 
@@ -29,7 +35,7 @@
 
 	function traceGraph(render) {
 		let lastGraph = new DataGraph()
-		goshawkjs.connect("wss://localhost:9999/ws").then((connection) => {
+		goshawkjs.connect(`wss://${params.host}:${params.port}/ws`).then((connection) => {
 			connection.transact((txn) => {
 
 				const graph = new DataGraph()

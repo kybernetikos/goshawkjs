@@ -1,6 +1,11 @@
 # goshawkjs
 
-GoshawkJS is a javascript client for goshawkdb.
+GoshawkJS is a javascript client for goshawkdb that works in node or the browser.
+
+Dev only links:
+* [Doc](https://rawgit.com/kybernetikos/goshawkjs/master/doc/index.html)
+* [Explorer](https://rawgit.com/kybernetikos/goshawkjs/tree/master/example/explorer)
+* Script tag: <tt>&gt;script type="text/javascript" src="https://rawgit.com/kybernetikos/goshawkjs/master/dist/goshawkdb.browser.js">&gt;/script></tt>
 
 ## Notes for getting Started
 
