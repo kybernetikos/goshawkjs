@@ -26,7 +26,7 @@
   "bugs": {
     "url": "https://github.com/kybernetikos/goshawkjs/issues"
   },
-  "homepage": "https://github.com/kybernetikos/goshawkjs#readme",
+  "homepage": "https://rawgit.com/kybernetikos/goshawkjs/master/doc/index.html",
   "dependencies": {
     "ws": "^1.1.1"
   },
