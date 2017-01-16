@@ -122,7 +122,7 @@ class ObjectCacheEntry {
 		if (!this.hasBeenWritten && !this.hasBeenCreated) {
 			this.hasBeenRead = true
 		}
-		if (this.hasBeenCreated || this.hasBeenWritten || this.version != null) {
+		if (this.hasData()) {
 			return this.readOnlyData
 		}
 
@@ -137,6 +137,10 @@ class ObjectCacheEntry {
 		}
 		this.data.value = value
 		this.data.refs = refs
+	}
+
+	hasData() {
+		return this.hasBeenCreated || this.hasBeenWritten || this.version != null
 	}
 
 	create(value, refs) {
@@ -214,13 +218,13 @@ class CopyCache {
 	}
 
 	// Returns an array of all the actions that have occurred on this cache.
-	getActions(namespace) {
+	getActions(namespace, cacheEntryFilter) {
 		const actions = []
 		// the version to ask for if we don't currently have any data in the cache for an object.
 		const initialVersion = Uint64.from(0, 0, 0, 0, 0, 0, 0, 0).concat(namespace)
 
 		for (let [,cacheEntry] of this.objects) {
-			if (cacheEntry.hasBeenRead || cacheEntry.hasBeenWritten || cacheEntry.hasBeenCreated) {
+			if (cacheEntryFilter(cacheEntry)) {
 				actions.push(cacheEntry.toAction(initialVersion))
 			}
 		}

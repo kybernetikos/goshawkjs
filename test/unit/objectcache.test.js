@@ -80,7 +80,7 @@ test("ObjectCache#getTemporaryView allows reads if the value has been cached, an
 	t.deepEqual(readRefs, emptyRefs)
 
 	const dummyTxnId = new Uint8Array(12)
-	const actions = view.getActions(dummyTxnId)
+	const actions = view.getActions(dummyTxnId, (entry) => entry.hasBeenCreated || entry.hasBeenWritten || entry.hasBeenRead)
 	t.deepEqual(actions, [{
 		VarId: id1.buffer,
 		Read: { Version: v0.buffer}

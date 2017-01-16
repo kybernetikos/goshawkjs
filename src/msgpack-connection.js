@@ -1,4 +1,4 @@
-const msgpack = require('../lib/msgpack.min')
+const msgpack = require('msgpack-lite/dist/msgpack.min.js')
 const WebSocket = require('ws')
 
 /**

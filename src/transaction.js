@@ -24,6 +24,9 @@ class Transaction {
 		/** @private */
 		this.shouldRetry = false
 
+		/** @private */
+		this.hasCacheMissed = false
+
 		/**
 		 * The roots that this client has access to.
 		 * @type {{string: Ref}}
@@ -59,6 +62,9 @@ class Transaction {
 		}
 		const id = ref.varId
 		const cacheEntry = this.cache.get(id)
+		if (cacheEntry.hasData() === false) {
+			this.hasCacheMissed = true
+		}
 		return cacheEntry.read()
 	}
 
@@ -150,6 +156,7 @@ class Transaction {
 	reset() {
 		this.cache = this.parentCache.getTemporaryView()
 		this.shouldRetry = false
+		this.hasCacheMissed = false
 	}
 
 	/** @private
@@ -160,7 +167,18 @@ class Transaction {
 
 	/** @private */
 	toMessage(txnId) {
-		const actions = this.cache.getActions(this.connection.namespace)
+		const anyChange = (entry) => entry.hasBeenCreated || entry.hasBeenWritten || entry.hasBeenRead
+		const justReads = (entry) => entry.hasBeenRead
+		const justCacheMisses = (entry) => entry.hasBeenRead && entry.hasData() === false
+
+		let filter = anyChange
+		if (this.shouldRetry) {
+			filter = justReads
+		} else if (this.hasCacheMissed) {
+			filter = justCacheMisses
+		}
+
+		const actions = this.cache.getActions(this.connection.namespace, filter)
 		return {
 			ClientTxnSubmission: {
 				Id: txnId,

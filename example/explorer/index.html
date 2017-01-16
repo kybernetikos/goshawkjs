@@ -12,6 +12,7 @@
 <body>
 	<div id="container"></div>
 	<div id="info"></div>
+	<div id="connectioninfo"></div>
 	<script>
 
 	const params = window.location.search.substring(1).split('&').map((x) => x.split('=')).reduce((curr, [key, value  = true]) => {curr[key] = value; return curr}, {
@@ -34,10 +35,13 @@
 	}
 
 	function traceGraph(render) {
+		let connectioninfo = document.getElementById("connectioninfo")
 		let lastGraph = new DataGraph()
+		connectioninfo.innerHTML = `Connecting to ${params.host}:${params.port}...`
 		goshawkjs.connect(`wss://${params.host}:${params.port}/ws`).then((connection) => {
-			connection.transact((txn) => {
+			connectioninfo.innerHTML = `Connected to ${params.host}:${params.port}...`
 
+			connection.transact((txn) => {
 				const graph = new DataGraph()
 				for (let root in txn.roots) {
 					graph.getNode(txn.roots[root]).name = root
@@ -50,7 +54,8 @@
 				txn.retry()
 			})
 		}).catch((err) => {
-			console.log("Connection Failed", err)
+			console.error(err)
+			connectioninfo.innerHTML = `Connection to ${params.host}:${params.port} failed.`
 		})
 	}
 

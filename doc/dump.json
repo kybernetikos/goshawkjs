@@ -1195,7 +1195,7 @@
     "__docId__": 56,
     "kind": "file",
     "name": "src/msgpack-connection.js",
-    "content": "const msgpack = require('../lib/msgpack.min')\nconst WebSocket = require('ws')\n\n/**\n * The websocket and Msgpack connection.\n * @private\n */\nclass MsgpackConnection {\n\tconstructor(url, connectionLabel = \"\") {\n\t\tthis.url = url\n\t\t// connectionLabel is purely used for logging.\n\t\tthis.connectionLabel = connectionLabel\n\t\tthis.websocket = null\n\t\tthis.options = {\n\t\t\tcodec: msgpack.createCodec({binarraybuffer: true})\n\t\t}\n\t\t// all the callbacks!\n\t\tthis.onOpen = null\n\t\tthis.onEnd = null\n\t\tthis.onMessage = null\n\t\tthis.onClose = null\n\t\tthis.onError = null\n\t}\n\n\tconnect(onMessage, onEnd, onOpen, connectionOptions) {\n\t\tthis.onMessage = onMessage\n\t\t// onEnd triggers onError or onClose.\n\t\tthis.onEnd = onEnd\n\t\tthis.onOpen = onOpen\n\t\tconst websocket = this.websocket = new WebSocket(this.url, undefined, connectionOptions)\n\t\twebsocket.binaryType = 'arraybuffer'\n\t\twebsocket.onopen = (evt) => {\n\t\t\tconsole.debug(`Connection ${this.connectionLabel}: Connection Open`)\n\t\t\tif (this.onOpen) {\n\t\t\t\tthis.onOpen(evt)\n\t\t\t}\n\t\t}\n\t\twebsocket.onclose = (evt) => {\n\t\t\tconsole.debug(`Connection ${this.connectionLabel}: Connection Closed`, evt.code, evt.reason)\n\t\t\tif (this.onEnd) {\n\t\t\t\tthis.onEnd(evt)\n\t\t\t}\n\t\t\tif (this.onClose) {\n\t\t\t\tthis.onClose(evt)\n\t\t\t}\n\t\t}\n\t\twebsocket.onerror = (evt) => {\n\t\t\tconsole.error(`Connection ${this.connectionLabel}: Connection Error`, evt.code, evt.reason)\n\t\t\tif (this.onEnd) {\n\t\t\t\tthis.onEnd(evt)\n\t\t\t}\n\t\t\tif (this.onError) {\n\t\t\t\tthis.onError(evt)\n\t\t\t}\n\t\t}\n\t\twebsocket.onmessage = (messageEvent) => {\n\t\t\tconst data = msgpack.decode(new Uint8Array(messageEvent.data));\n\t\t\tconsole.debug(`${this.connectionLabel} <`, data)\n\n\t\t\tif (this.onMessage) {\n\t\t\t\tthis.onMessage(data)\n\t\t\t}\n\t\t}\n\t}\n\n\tsend(message) {\n\t\tconsole.debug(`${this.connectionLabel} >`, message)\n\t\tthis.websocket.send(msgpack.encode(message, this.options))\n\t}\n\n\t// sends a message, and returns a promise which resolves with the next message back from the server. This helps\n\t// make a request/response pattern easy.  It replaces onMessage and onEnd until it receives the message.\n\trequest(message) {\n\t\tconst oldHandler = this.onMessage\n\t\tconst oldEndHandler = this.onEnd\n\t\treturn new Promise((resolve, reject) => {\n\t\t\tthis.onMessage = (msg) => {\n\t\t\t\tresolve(msg)\n\t\t\t\tthis.onMessage = oldHandler\n\t\t\t\tthis.onEnd = oldEndHandler\n\t\t\t}\n\t\t\tthis.onEnd = (evt) => {\n\t\t\t\tthis.onMessage = oldHandler\n\t\t\t\tthis.onEnd = oldEndHandler\n\t\t\t\treject(evt)\n\t\t\t\tif (oldEndHandler) {\n\t\t\t\t\toldEndHandler(evt)\n\t\t\t\t}\n\t\t\t}\n\t\t\tthis.send(message)\n\t\t})\n\t}\n\n\tclose() {\n\t\tthis.websocket.close()\n\t}\n}\n\nmodule.exports = MsgpackConnection",
+    "content": "const msgpack = require('msgpack-lite/dist/msgpack.min.js')\nconst WebSocket = require('ws')\n\n/**\n * The websocket and Msgpack connection.\n * @private\n */\nclass MsgpackConnection {\n\tconstructor(url, connectionLabel = \"\") {\n\t\tthis.url = url\n\t\t// connectionLabel is purely used for logging.\n\t\tthis.connectionLabel = connectionLabel\n\t\tthis.websocket = null\n\t\tthis.options = {\n\t\t\tcodec: msgpack.createCodec({binarraybuffer: true})\n\t\t}\n\t\t// all the callbacks!\n\t\tthis.onOpen = null\n\t\tthis.onEnd = null\n\t\tthis.onMessage = null\n\t\tthis.onClose = null\n\t\tthis.onError = null\n\t}\n\n\tconnect(onMessage, onEnd, onOpen, connectionOptions) {\n\t\tthis.onMessage = onMessage\n\t\t// onEnd triggers onError or onClose.\n\t\tthis.onEnd = onEnd\n\t\tthis.onOpen = onOpen\n\t\tconst websocket = this.websocket = new WebSocket(this.url, undefined, connectionOptions)\n\t\twebsocket.binaryType = 'arraybuffer'\n\t\twebsocket.onopen = (evt) => {\n\t\t\tconsole.debug(`Connection ${this.connectionLabel}: Connection Open`)\n\t\t\tif (this.onOpen) {\n\t\t\t\tthis.onOpen(evt)\n\t\t\t}\n\t\t}\n\t\twebsocket.onclose = (evt) => {\n\t\t\tconsole.debug(`Connection ${this.connectionLabel}: Connection Closed`, evt.code, evt.reason)\n\t\t\tif (this.onEnd) {\n\t\t\t\tthis.onEnd(evt)\n\t\t\t}\n\t\t\tif (this.onClose) {\n\t\t\t\tthis.onClose(evt)\n\t\t\t}\n\t\t}\n\t\twebsocket.onerror = (evt) => {\n\t\t\tconsole.error(`Connection ${this.connectionLabel}: Connection Error`, evt.code, evt.reason)\n\t\t\tif (this.onEnd) {\n\t\t\t\tthis.onEnd(evt)\n\t\t\t}\n\t\t\tif (this.onError) {\n\t\t\t\tthis.onError(evt)\n\t\t\t}\n\t\t}\n\t\twebsocket.onmessage = (messageEvent) => {\n\t\t\tconst data = msgpack.decode(new Uint8Array(messageEvent.data));\n\t\t\tconsole.debug(`${this.connectionLabel} <`, data)\n\n\t\t\tif (this.onMessage) {\n\t\t\t\tthis.onMessage(data)\n\t\t\t}\n\t\t}\n\t}\n\n\tsend(message) {\n\t\tconsole.debug(`${this.connectionLabel} >`, message)\n\t\tthis.websocket.send(msgpack.encode(message, this.options))\n\t}\n\n\t// sends a message, and returns a promise which resolves with the next message back from the server. This helps\n\t// make a request/response pattern easy.  It replaces onMessage and onEnd until it receives the message.\n\trequest(message) {\n\t\tconst oldHandler = this.onMessage\n\t\tconst oldEndHandler = this.onEnd\n\t\treturn new Promise((resolve, reject) => {\n\t\t\tthis.onMessage = (msg) => {\n\t\t\t\tresolve(msg)\n\t\t\t\tthis.onMessage = oldHandler\n\t\t\t\tthis.onEnd = oldEndHandler\n\t\t\t}\n\t\t\tthis.onEnd = (evt) => {\n\t\t\t\tthis.onMessage = oldHandler\n\t\t\t\tthis.onEnd = oldEndHandler\n\t\t\t\treject(evt)\n\t\t\t\tif (oldEndHandler) {\n\t\t\t\t\toldEndHandler(evt)\n\t\t\t\t}\n\t\t\t}\n\t\t\tthis.send(message)\n\t\t})\n\t}\n\n\tclose() {\n\t\tthis.websocket.close()\n\t}\n}\n\nmodule.exports = MsgpackConnection",
     "static": true,
     "longname": "src/msgpack-connection.js",
     "access": null,
@@ -1852,7 +1852,7 @@
     "__docId__": 83,
     "kind": "file",
     "name": "src/objectcache.js",
-    "content": "const {binaryToHex, toArrayBuffer} = require('./utils')\nconst {TransactionRetryNeeded, MutationNotAllowed} = require('./errors')\nconst Uint64 = require('./uint64')\nconst Ref = require('./ref')\nconst Goshawk = require('./goshawk')\n\nfunction checkRefs(refs) {\n\tfor (let i = 0; i < refs.length; ++i) {\n\t\tconst ref = refs[i]\n\t\tif (ref instanceof Ref === false) {\n\t\t\tthrow new TypeError(`Reference ${i} was not of reference type - was a ${ref.constructor.name} : ${ref.toString()}`)\n\t\t}\n\t}\n}\n\n/**\n * The top level object cache. It keeps objects value and refs stored against their id.\n * @private\n */\nclass ObjectCache {\n\tconstructor() {\n\t\tthis.objects = new Map()\n\t}\n\n\tget(id) {\n\t\tconst hashable = binaryToHex(id)\n\t\tif (!this.objects.has(hashable)) {\n\t\t\tthis.objects.set(hashable, new ObjectCacheEntry(id))\n\t\t}\n\t\treturn this.objects.get(hashable)\n\t}\n\n\tremove(id) {\n\t\tconst hashable = binaryToHex(id)\n\t\tif (!this.objects.has(hashable)) {\n\t\t\tthrow new Error(`Unexpected remove of id ${hashable}`)\n\t\t}\n\t\tthis.objects.delete(hashable)\n\t}\n\n\tgetTemporaryView() {\n\t\treturn new CopyCache(this)\n\t}\n}\n\nmodule.exports = ObjectCache\n\n// An ObjectCacheEntry represents the clients knowledge about a GoshawkDB Object.\n//  - It should always have an id.\n//  - If it contains values known to have been in the database (either they have been sent in a cache update, or a\n//    create/write that has been acknowledged.  The values version and data.value and data.refs will be set.\n//\t- data.refs and data.value will be set after a write or create.\nclass ObjectCacheEntry {\n\tconstructor(id) {\n\t\tif (id instanceof Uint8Array == false) {\n\t\t\tthrow new TypeError(`id must be a uint8, was ${String(id)}`)\n\t\t}\n\t\tthis.id = id\n\n\t\tthis.version = null\n\t\tthis.data = {\n\t\t\tvalue: null,\n\t\t\trefs: null\n\t\t}\n\n\t\t// best effort attempt to restrict mutations in the data I return to the user.\n\t\tthis.readOnlyData = Object.create({}, {\n\t\t\t\tvalue: {\n\t\t\t\t\tset: () => {\n\t\t\t\t\t\tthrow new MutationNotAllowed(\"Cannot set value without a transaction.write call.\")\n\t\t\t\t\t},\n\t\t\t\t\tget: () => {\n\t\t\t\t\t\treturn this.data.value\n\t\t\t\t\t}\n\t\t\t\t},\n\t\t\t\trefs: {\n\t\t\t\t\tset: () => {\n\t\t\t\t\t\tthrow new MutationNotAllowed(\"Cannot set references without a transaction.write call.\")\n\t\t\t\t\t},\n\t\t\t\t\tget: () => {\n\t\t\t\t\t\tconst srcRefs = this.data.refs\n\t\t\t\t\t\tif (global.Proxy) {\n\t\t\t\t\t\t\treturn new Proxy(srcRefs, {\n\t\t\t\t\t\t\t\tset: () => {\n\t\t\t\t\t\t\t\t\tthrow new MutationNotAllowed(\"Cannot change references without a transaction.write call.\")\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t})\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\treturn srcRefs.slice()\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t},\n\t\t\t\tversion: {\n\t\t\t\t\tset: () => {\n\t\t\t\t\t\tthrow new MutationNotAllowed(\"Cannot set references without a transaction.write call.\")\n\t\t\t\t\t},\n\t\t\t\t\tget: () => {\n\t\t\t\t\t\treturn this.version\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t})\n\n\t\t// Record which actions have occurred on this object from the client.\n\t\t// These are only needed on objects within a transactions cache, not at the top level.\n\t\t//  - If something has been written or created, calling read on it has no effect (it is answered from cache).\n\t\t//  - If something has been created, calling write on it has no effect (the create is merely updated to the contents of the write).\n\t\tthis.hasBeenWritten = false\n\t\tthis.hasBeenRead = false\n\t\tthis.hasBeenCreated = false\n\t}\n\n\t// Updates representing version, value and refs are they are in the remote database.  Can populate on an abort or a submit.\n\tupdate(version, value, refs) {\n\t\tvalue = toArrayBuffer(value)\n\t\tcheckRefs(refs)\n\t\tthis.data.value = value\n\t\tthis.data.refs = refs\n\t\tthis.version = toArrayBuffer(version)\n\t}\n\n\tread() {\n\t\tif (!this.hasBeenWritten && !this.hasBeenCreated) {\n\t\t\tthis.hasBeenRead = true\n\t\t}\n\t\tif (this.hasBeenCreated || this.hasBeenWritten || this.version != null) {\n\t\t\treturn this.readOnlyData\n\t\t}\n\n\t\tthrow new TransactionRetryNeeded(`Object ${binaryToHex(this.id)} not present in cache`)\n\t}\n\n\twrite(value, refs) {\n\t\tvalue = toArrayBuffer(value)\n\t\tcheckRefs(refs)\n\t\tif (!this.hasBeenCreated) {\n\t\t\tthis.hasBeenWritten = true\n\t\t}\n\t\tthis.data.value = value\n\t\tthis.data.refs = refs\n\t}\n\n\tcreate(value, refs) {\n\t\tif (value instanceof ArrayBuffer != true) {\n\t\t\tthrow new TypeError(\"values should be array buffers : \" + value)\n\t\t}\n\t\tcheckRefs(refs)\n\t\tthis.hasBeenCreated = true\n\t\tthis.data.value = value\n\t\tthis.data.refs = refs\n\t}\n\n\tclone() {\n\t\treturn new ObjectCacheEntry(this.id).copyFrom(this)\n\t}\n\n\tcopyFrom(otherEntry) {\n\t\tthis.version = otherEntry.version\n\t\tthis.data.value = otherEntry.data.value\n\t\tthis.data.refs = otherEntry.data.refs\n\t\tthis.hasBeenRead = otherEntry.hasBeenRead\n\t\tthis.hasBeenWritten = otherEntry.hasBeenWritten\n\t\tthis.hasBeenCreated = otherEntry.hasBeenCreated\n\t\treturn this\n\t}\n\n\ttoAction(initialVersion) {\n\t\tconst result = {\n\t\t\tVarId: this.id.buffer,\n\t\t}\n\t\tconst refMessages = this.data.refs ? this.data.refs.map((ref) => ref.toMessage()) : []\n\n\t\tif (this.hasBeenRead && !this.hasBeenWritten) {\n\t\t\tresult.Read = {Version: this.version || initialVersion}\n\t\t} else if (this.hasBeenWritten && !this.hasBeenRead) {\n\t\t\tresult.Write = {Value: this.data.value, References: refMessages}\n\t\t} else if (this.hasBeenWritten && this.hasBeenRead) {\n\t\t\tresult.ReadWrite = {Version: this.version, Value: this.data.value, References: refMessages}\n\t\t} else if (this.hasBeenCreated) {\n\t\t\tresult.Create = {Value: this.data.value, References: refMessages}\n\t\t} else {\n\t\t\tthrow new Error(`No read or write has occurred on object ${this.id}, cannot form an action.`)\n\t\t}\n\t\treturn result\n\t}\n}\n\nclass CopyCache {\n\tconstructor(parentCache) {\n\t\tthis.parentCache = parentCache\n\t\tthis.objects = new Map()\n\t}\n\n\tget(id) {\n\t\tconst hashable = binaryToHex(id)\n\t\tif (!this.objects.has(hashable)) {\n\t\t\tthis.objects.set(hashable, this.parentCache.get(id).clone())\n\t\t}\n\t\treturn this.objects.get(hashable)\n\t}\n\n\tpromote(finalTxnId) {\n\t\tfor (let [, entry] of this.objects) {\n\t\t\tconst parentEntry = this.parentCache.get(entry.id)\n\t\t\tif (finalTxnId) {\n\t\t\t\t// if we are given a transaction id, then this promotion should be treated like a cache update from the server.\n\t\t\t\tif (entry.hasBeenCreated || entry.hasBeenWritten) {\n\t\t\t\t\tparentEntry.update(finalTxnId, entry.data.value, entry.data.refs)\n\t\t\t\t}\n\t\t\t} else {\n\t\t\t\t// otherwise, it's a nested transaction completing, so we do a full copy into the parent.\n\t\t\t\tparentEntry.copyFrom(entry)\n\t\t\t}\n\t\t}\n\t}\n\n\t// Returns an array of all the actions that have occurred on this cache.\n\tgetActions(namespace) {\n\t\tconst actions = []\n\t\t// the version to ask for if we don't currently have any data in the cache for an object.\n\t\tconst initialVersion = Uint64.from(0, 0, 0, 0, 0, 0, 0, 0).concat(namespace)\n\n\t\tfor (let [,cacheEntry] of this.objects) {\n\t\t\tif (cacheEntry.hasBeenRead || cacheEntry.hasBeenWritten || cacheEntry.hasBeenCreated) {\n\t\t\t\tactions.push(cacheEntry.toAction(initialVersion))\n\t\t\t}\n\t\t}\n\n\t\treturn actions\n\t}\n\n\tgetTemporaryView() {\n\t\treturn new CopyCache(this)\n\t}\n}",
+    "content": "const {binaryToHex, toArrayBuffer} = require('./utils')\nconst {TransactionRetryNeeded, MutationNotAllowed} = require('./errors')\nconst Uint64 = require('./uint64')\nconst Ref = require('./ref')\nconst Goshawk = require('./goshawk')\n\nfunction checkRefs(refs) {\n\tfor (let i = 0; i < refs.length; ++i) {\n\t\tconst ref = refs[i]\n\t\tif (ref instanceof Ref === false) {\n\t\t\tthrow new TypeError(`Reference ${i} was not of reference type - was a ${ref.constructor.name} : ${ref.toString()}`)\n\t\t}\n\t}\n}\n\n/**\n * The top level object cache. It keeps objects value and refs stored against their id.\n * @private\n */\nclass ObjectCache {\n\tconstructor() {\n\t\tthis.objects = new Map()\n\t}\n\n\tget(id) {\n\t\tconst hashable = binaryToHex(id)\n\t\tif (!this.objects.has(hashable)) {\n\t\t\tthis.objects.set(hashable, new ObjectCacheEntry(id))\n\t\t}\n\t\treturn this.objects.get(hashable)\n\t}\n\n\tremove(id) {\n\t\tconst hashable = binaryToHex(id)\n\t\tif (!this.objects.has(hashable)) {\n\t\t\tthrow new Error(`Unexpected remove of id ${hashable}`)\n\t\t}\n\t\tthis.objects.delete(hashable)\n\t}\n\n\tgetTemporaryView() {\n\t\treturn new CopyCache(this)\n\t}\n}\n\nmodule.exports = ObjectCache\n\n// An ObjectCacheEntry represents the clients knowledge about a GoshawkDB Object.\n//  - It should always have an id.\n//  - If it contains values known to have been in the database (either they have been sent in a cache update, or a\n//    create/write that has been acknowledged.  The values version and data.value and data.refs will be set.\n//\t- data.refs and data.value will be set after a write or create.\nclass ObjectCacheEntry {\n\tconstructor(id) {\n\t\tif (id instanceof Uint8Array == false) {\n\t\t\tthrow new TypeError(`id must be a uint8, was ${String(id)}`)\n\t\t}\n\t\tthis.id = id\n\n\t\tthis.version = null\n\t\tthis.data = {\n\t\t\tvalue: null,\n\t\t\trefs: null\n\t\t}\n\n\t\t// best effort attempt to restrict mutations in the data I return to the user.\n\t\tthis.readOnlyData = Object.create({}, {\n\t\t\t\tvalue: {\n\t\t\t\t\tset: () => {\n\t\t\t\t\t\tthrow new MutationNotAllowed(\"Cannot set value without a transaction.write call.\")\n\t\t\t\t\t},\n\t\t\t\t\tget: () => {\n\t\t\t\t\t\treturn this.data.value\n\t\t\t\t\t}\n\t\t\t\t},\n\t\t\t\trefs: {\n\t\t\t\t\tset: () => {\n\t\t\t\t\t\tthrow new MutationNotAllowed(\"Cannot set references without a transaction.write call.\")\n\t\t\t\t\t},\n\t\t\t\t\tget: () => {\n\t\t\t\t\t\tconst srcRefs = this.data.refs\n\t\t\t\t\t\tif (global.Proxy) {\n\t\t\t\t\t\t\treturn new Proxy(srcRefs, {\n\t\t\t\t\t\t\t\tset: () => {\n\t\t\t\t\t\t\t\t\tthrow new MutationNotAllowed(\"Cannot change references without a transaction.write call.\")\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t})\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\treturn srcRefs.slice()\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t},\n\t\t\t\tversion: {\n\t\t\t\t\tset: () => {\n\t\t\t\t\t\tthrow new MutationNotAllowed(\"Cannot set references without a transaction.write call.\")\n\t\t\t\t\t},\n\t\t\t\t\tget: () => {\n\t\t\t\t\t\treturn this.version\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t})\n\n\t\t// Record which actions have occurred on this object from the client.\n\t\t// These are only needed on objects within a transactions cache, not at the top level.\n\t\t//  - If something has been written or created, calling read on it has no effect (it is answered from cache).\n\t\t//  - If something has been created, calling write on it has no effect (the create is merely updated to the contents of the write).\n\t\tthis.hasBeenWritten = false\n\t\tthis.hasBeenRead = false\n\t\tthis.hasBeenCreated = false\n\t}\n\n\t// Updates representing version, value and refs are they are in the remote database.  Can populate on an abort or a submit.\n\tupdate(version, value, refs) {\n\t\tvalue = toArrayBuffer(value)\n\t\tcheckRefs(refs)\n\t\tthis.data.value = value\n\t\tthis.data.refs = refs\n\t\tthis.version = toArrayBuffer(version)\n\t}\n\n\tread() {\n\t\tif (!this.hasBeenWritten && !this.hasBeenCreated) {\n\t\t\tthis.hasBeenRead = true\n\t\t}\n\t\tif (this.hasData()) {\n\t\t\treturn this.readOnlyData\n\t\t}\n\n\t\tthrow new TransactionRetryNeeded(`Object ${binaryToHex(this.id)} not present in cache`)\n\t}\n\n\twrite(value, refs) {\n\t\tvalue = toArrayBuffer(value)\n\t\tcheckRefs(refs)\n\t\tif (!this.hasBeenCreated) {\n\t\t\tthis.hasBeenWritten = true\n\t\t}\n\t\tthis.data.value = value\n\t\tthis.data.refs = refs\n\t}\n\n\thasData() {\n\t\treturn this.hasBeenCreated || this.hasBeenWritten || this.version != null\n\t}\n\n\tcreate(value, refs) {\n\t\tif (value instanceof ArrayBuffer != true) {\n\t\t\tthrow new TypeError(\"values should be array buffers : \" + value)\n\t\t}\n\t\tcheckRefs(refs)\n\t\tthis.hasBeenCreated = true\n\t\tthis.data.value = value\n\t\tthis.data.refs = refs\n\t}\n\n\tclone() {\n\t\treturn new ObjectCacheEntry(this.id).copyFrom(this)\n\t}\n\n\tcopyFrom(otherEntry) {\n\t\tthis.version = otherEntry.version\n\t\tthis.data.value = otherEntry.data.value\n\t\tthis.data.refs = otherEntry.data.refs\n\t\tthis.hasBeenRead = otherEntry.hasBeenRead\n\t\tthis.hasBeenWritten = otherEntry.hasBeenWritten\n\t\tthis.hasBeenCreated = otherEntry.hasBeenCreated\n\t\treturn this\n\t}\n\n\ttoAction(initialVersion) {\n\t\tconst result = {\n\t\t\tVarId: this.id.buffer,\n\t\t}\n\t\tconst refMessages = this.data.refs ? this.data.refs.map((ref) => ref.toMessage()) : []\n\n\t\tif (this.hasBeenRead && !this.hasBeenWritten) {\n\t\t\tresult.Read = {Version: this.version || initialVersion}\n\t\t} else if (this.hasBeenWritten && !this.hasBeenRead) {\n\t\t\tresult.Write = {Value: this.data.value, References: refMessages}\n\t\t} else if (this.hasBeenWritten && this.hasBeenRead) {\n\t\t\tresult.ReadWrite = {Version: this.version, Value: this.data.value, References: refMessages}\n\t\t} else if (this.hasBeenCreated) {\n\t\t\tresult.Create = {Value: this.data.value, References: refMessages}\n\t\t} else {\n\t\t\tthrow new Error(`No read or write has occurred on object ${this.id}, cannot form an action.`)\n\t\t}\n\t\treturn result\n\t}\n}\n\nclass CopyCache {\n\tconstructor(parentCache) {\n\t\tthis.parentCache = parentCache\n\t\tthis.objects = new Map()\n\t}\n\n\tget(id) {\n\t\tconst hashable = binaryToHex(id)\n\t\tif (!this.objects.has(hashable)) {\n\t\t\tthis.objects.set(hashable, this.parentCache.get(id).clone())\n\t\t}\n\t\treturn this.objects.get(hashable)\n\t}\n\n\tpromote(finalTxnId) {\n\t\tfor (let [, entry] of this.objects) {\n\t\t\tconst parentEntry = this.parentCache.get(entry.id)\n\t\t\tif (finalTxnId) {\n\t\t\t\t// if we are given a transaction id, then this promotion should be treated like a cache update from the server.\n\t\t\t\tif (entry.hasBeenCreated || entry.hasBeenWritten) {\n\t\t\t\t\tparentEntry.update(finalTxnId, entry.data.value, entry.data.refs)\n\t\t\t\t}\n\t\t\t} else {\n\t\t\t\t// otherwise, it's a nested transaction completing, so we do a full copy into the parent.\n\t\t\t\tparentEntry.copyFrom(entry)\n\t\t\t}\n\t\t}\n\t}\n\n\t// Returns an array of all the actions that have occurred on this cache.\n\tgetActions(namespace, cacheEntryFilter) {\n\t\tconst actions = []\n\t\t// the version to ask for if we don't currently have any data in the cache for an object.\n\t\tconst initialVersion = Uint64.from(0, 0, 0, 0, 0, 0, 0, 0).concat(namespace)\n\n\t\tfor (let [,cacheEntry] of this.objects) {\n\t\t\tif (cacheEntryFilter(cacheEntry)) {\n\t\t\t\tactions.push(cacheEntry.toAction(initialVersion))\n\t\t\t}\n\t\t}\n\n\t\treturn actions\n\t}\n\n\tgetTemporaryView() {\n\t\treturn new CopyCache(this)\n\t}\n}",
     "static": true,
     "longname": "src/objectcache.js",
     "access": null,
@@ -2403,6 +2403,32 @@
   {
     "__docId__": 105,
     "kind": "method",
+    "name": "hasData",
+    "memberof": "src/objectcache.js~ObjectCacheEntry",
+    "generator": false,
+    "async": false,
+    "static": false,
+    "longname": "src/objectcache.js~ObjectCacheEntry#hasData",
+    "access": null,
+    "description": null,
+    "lineNumber": 142,
+    "undocument": true,
+    "unknown": [
+      {
+        "tagName": "@_undocument",
+        "tagValue": ""
+      }
+    ],
+    "params": [],
+    "return": {
+      "types": [
+        "*"
+      ]
+    }
+  },
+  {
+    "__docId__": 106,
+    "kind": "method",
     "name": "create",
     "memberof": "src/objectcache.js~ObjectCacheEntry",
     "generator": false,
@@ -2411,7 +2437,7 @@
     "longname": "src/objectcache.js~ObjectCacheEntry#create",
     "access": null,
     "description": null,
-    "lineNumber": 142,
+    "lineNumber": 146,
     "undocument": true,
     "unknown": [
       {
@@ -2435,7 +2461,7 @@
     ]
   },
   {
-    "__docId__": 106,
+    "__docId__": 107,
     "kind": "member",
     "name": "hasBeenCreated",
     "memberof": "src/objectcache.js~ObjectCacheEntry",
@@ -2443,7 +2469,7 @@
     "longname": "src/objectcache.js~ObjectCacheEntry#hasBeenCreated",
     "access": null,
     "description": null,
-    "lineNumber": 147,
+    "lineNumber": 151,
     "undocument": true,
     "unknown": [
       {
@@ -2458,7 +2484,7 @@
     }
   },
   {
-    "__docId__": 107,
+    "__docId__": 108,
     "kind": "method",
     "name": "clone",
     "memberof": "src/objectcache.js~ObjectCacheEntry",
@@ -2468,7 +2494,7 @@
     "longname": "src/objectcache.js~ObjectCacheEntry#clone",
     "access": null,
     "description": null,
-    "lineNumber": 152,
+    "lineNumber": 156,
     "undocument": true,
     "unknown": [
       {
@@ -2484,7 +2510,7 @@
     }
   },
   {
-    "__docId__": 108,
+    "__docId__": 109,
     "kind": "method",
     "name": "copyFrom",
     "memberof": "src/objectcache.js~ObjectCacheEntry",
@@ -2494,7 +2520,7 @@
     "longname": "src/objectcache.js~ObjectCacheEntry#copyFrom",
     "access": null,
     "description": null,
-    "lineNumber": 156,
+    "lineNumber": 160,
     "undocument": true,
     "unknown": [
       {
@@ -2517,58 +2543,12 @@
     }
   },
   {
-    "__docId__": 109,
+    "__docId__": 110,
     "kind": "member",
     "name": "version",
     "memberof": "src/objectcache.js~ObjectCacheEntry",
     "static": false,
     "longname": "src/objectcache.js~ObjectCacheEntry#version",
-    "access": null,
-    "description": null,
-    "lineNumber": 157,
-    "undocument": true,
-    "unknown": [
-      {
-        "tagName": "@_undocument",
-        "tagValue": ""
-      }
-    ],
-    "type": {
-      "types": [
-        "*"
-      ]
-    }
-  },
-  {
-    "__docId__": 110,
-    "kind": "member",
-    "name": "hasBeenRead",
-    "memberof": "src/objectcache.js~ObjectCacheEntry",
-    "static": false,
-    "longname": "src/objectcache.js~ObjectCacheEntry#hasBeenRead",
-    "access": null,
-    "description": null,
-    "lineNumber": 160,
-    "undocument": true,
-    "unknown": [
-      {
-        "tagName": "@_undocument",
-        "tagValue": ""
-      }
-    ],
-    "type": {
-      "types": [
-        "*"
-      ]
-    }
-  },
-  {
-    "__docId__": 111,
-    "kind": "member",
-    "name": "hasBeenWritten",
-    "memberof": "src/objectcache.js~ObjectCacheEntry",
-    "static": false,
-    "longname": "src/objectcache.js~ObjectCacheEntry#hasBeenWritten",
     "access": null,
     "description": null,
     "lineNumber": 161,
@@ -2586,15 +2566,38 @@
     }
   },
   {
-    "__docId__": 112,
+    "__docId__": 111,
     "kind": "member",
-    "name": "hasBeenCreated",
+    "name": "hasBeenRead",
     "memberof": "src/objectcache.js~ObjectCacheEntry",
     "static": false,
-    "longname": "src/objectcache.js~ObjectCacheEntry#hasBeenCreated",
+    "longname": "src/objectcache.js~ObjectCacheEntry#hasBeenRead",
     "access": null,
     "description": null,
-    "lineNumber": 162,
+    "lineNumber": 164,
+    "undocument": true,
+    "unknown": [
+      {
+        "tagName": "@_undocument",
+        "tagValue": ""
+      }
+    ],
+    "type": {
+      "types": [
+        "*"
+      ]
+    }
+  },
+  {
+    "__docId__": 112,
+    "kind": "member",
+    "name": "hasBeenWritten",
+    "memberof": "src/objectcache.js~ObjectCacheEntry",
+    "static": false,
+    "longname": "src/objectcache.js~ObjectCacheEntry#hasBeenWritten",
+    "access": null,
+    "description": null,
+    "lineNumber": 165,
     "undocument": true,
     "unknown": [
       {
@@ -2610,6 +2613,29 @@
   },
   {
     "__docId__": 113,
+    "kind": "member",
+    "name": "hasBeenCreated",
+    "memberof": "src/objectcache.js~ObjectCacheEntry",
+    "static": false,
+    "longname": "src/objectcache.js~ObjectCacheEntry#hasBeenCreated",
+    "access": null,
+    "description": null,
+    "lineNumber": 166,
+    "undocument": true,
+    "unknown": [
+      {
+        "tagName": "@_undocument",
+        "tagValue": ""
+      }
+    ],
+    "type": {
+      "types": [
+        "*"
+      ]
+    }
+  },
+  {
+    "__docId__": 114,
     "kind": "method",
     "name": "toAction",
     "memberof": "src/objectcache.js~ObjectCacheEntry",
@@ -2619,7 +2645,7 @@
     "longname": "src/objectcache.js~ObjectCacheEntry#toAction",
     "access": null,
     "description": null,
-    "lineNumber": 166,
+    "lineNumber": 170,
     "undocument": true,
     "unknown": [
       {
@@ -2642,7 +2668,7 @@
     }
   },
   {
-    "__docId__": 114,
+    "__docId__": 115,
     "kind": "class",
     "name": "CopyCache",
     "memberof": "src/objectcache.js",
@@ -2653,7 +2679,7 @@
     "importPath": "goshawkjs/src/objectcache.js",
     "importStyle": null,
     "description": null,
-    "lineNumber": 187,
+    "lineNumber": 191,
     "undocument": true,
     "unknown": [
       {
@@ -2664,7 +2690,7 @@
     "interface": false
   },
   {
-    "__docId__": 115,
+    "__docId__": 116,
     "kind": "constructor",
     "name": "constructor",
     "memberof": "src/objectcache.js~CopyCache",
@@ -2674,7 +2700,7 @@
     "longname": "src/objectcache.js~CopyCache#constructor",
     "access": null,
     "description": null,
-    "lineNumber": 188,
+    "lineNumber": 192,
     "undocument": true,
     "unknown": [
       {
@@ -2692,7 +2718,7 @@
     ]
   },
   {
-    "__docId__": 116,
+    "__docId__": 117,
     "kind": "member",
     "name": "parentCache",
     "memberof": "src/objectcache.js~CopyCache",
@@ -2700,30 +2726,7 @@
     "longname": "src/objectcache.js~CopyCache#parentCache",
     "access": null,
     "description": null,
-    "lineNumber": 189,
-    "undocument": true,
-    "unknown": [
-      {
-        "tagName": "@_undocument",
-        "tagValue": ""
-      }
-    ],
-    "type": {
-      "types": [
-        "*"
-      ]
-    }
-  },
-  {
-    "__docId__": 117,
-    "kind": "member",
-    "name": "objects",
-    "memberof": "src/objectcache.js~CopyCache",
-    "static": false,
-    "longname": "src/objectcache.js~CopyCache#objects",
-    "access": null,
-    "description": null,
-    "lineNumber": 190,
+    "lineNumber": 193,
     "undocument": true,
     "unknown": [
       {
@@ -2739,6 +2742,29 @@
   },
   {
     "__docId__": 118,
+    "kind": "member",
+    "name": "objects",
+    "memberof": "src/objectcache.js~CopyCache",
+    "static": false,
+    "longname": "src/objectcache.js~CopyCache#objects",
+    "access": null,
+    "description": null,
+    "lineNumber": 194,
+    "undocument": true,
+    "unknown": [
+      {
+        "tagName": "@_undocument",
+        "tagValue": ""
+      }
+    ],
+    "type": {
+      "types": [
+        "*"
+      ]
+    }
+  },
+  {
+    "__docId__": 119,
     "kind": "method",
     "name": "get",
     "memberof": "src/objectcache.js~CopyCache",
@@ -2748,7 +2774,7 @@
     "longname": "src/objectcache.js~CopyCache#get",
     "access": null,
     "description": null,
-    "lineNumber": 193,
+    "lineNumber": 197,
     "undocument": true,
     "unknown": [
       {
@@ -2771,7 +2797,7 @@
     }
   },
   {
-    "__docId__": 119,
+    "__docId__": 120,
     "kind": "method",
     "name": "promote",
     "memberof": "src/objectcache.js~CopyCache",
@@ -2781,7 +2807,7 @@
     "longname": "src/objectcache.js~CopyCache#promote",
     "access": null,
     "description": null,
-    "lineNumber": 201,
+    "lineNumber": 205,
     "undocument": true,
     "unknown": [
       {
@@ -2799,7 +2825,7 @@
     ]
   },
   {
-    "__docId__": 120,
+    "__docId__": 121,
     "kind": "method",
     "name": "getActions",
     "memberof": "src/objectcache.js~CopyCache",
@@ -2809,7 +2835,7 @@
     "longname": "src/objectcache.js~CopyCache#getActions",
     "access": null,
     "description": null,
-    "lineNumber": 217,
+    "lineNumber": 221,
     "undocument": true,
     "unknown": [
       {
@@ -2823,6 +2849,12 @@
         "types": [
           "*"
         ]
+      },
+      {
+        "name": "cacheEntryFilter",
+        "types": [
+          "*"
+        ]
       }
     ],
     "return": {
@@ -2832,7 +2864,7 @@
     }
   },
   {
-    "__docId__": 121,
+    "__docId__": 122,
     "kind": "method",
     "name": "getTemporaryView",
     "memberof": "src/objectcache.js~CopyCache",
@@ -2842,7 +2874,7 @@
     "longname": "src/objectcache.js~CopyCache#getTemporaryView",
     "access": null,
     "description": null,
-    "lineNumber": 231,
+    "lineNumber": 235,
     "undocument": true,
     "unknown": [
       {
@@ -2858,7 +2890,7 @@
     }
   },
   {
-    "__docId__": 122,
+    "__docId__": 123,
     "kind": "class",
     "name": "ObjectCache",
     "memberof": "src/objectcache.js",
@@ -2873,7 +2905,7 @@
     "interface": false
   },
   {
-    "__docId__": 123,
+    "__docId__": 124,
     "kind": "constructor",
     "name": "constructor",
     "memberof": "src/objectcache.js~ObjectCache",
@@ -2894,7 +2926,7 @@
     "params": []
   },
   {
-    "__docId__": 124,
+    "__docId__": 125,
     "kind": "member",
     "name": "objects",
     "memberof": "src/objectcache.js~ObjectCache",
@@ -2917,7 +2949,7 @@
     }
   },
   {
-    "__docId__": 125,
+    "__docId__": 126,
     "kind": "method",
     "name": "get",
     "memberof": "src/objectcache.js~ObjectCache",
@@ -2950,7 +2982,7 @@
     }
   },
   {
-    "__docId__": 126,
+    "__docId__": 127,
     "kind": "method",
     "name": "remove",
     "memberof": "src/objectcache.js~ObjectCache",
@@ -2978,7 +3010,7 @@
     ]
   },
   {
-    "__docId__": 127,
+    "__docId__": 128,
     "kind": "method",
     "name": "getTemporaryView",
     "memberof": "src/objectcache.js~ObjectCache",
@@ -3004,7 +3036,7 @@
     }
   },
   {
-    "__docId__": 128,
+    "__docId__": 129,
     "kind": "file",
     "name": "src/ref.js",
     "content": "const {binaryToHex} = require('./utils')\n\n/**\n * A Ref represents a pointer to an object in the database.\n * Each Ref also carries with it some capabilities that determine\n * which of the actions `read` and `write` can be done with that reference.\n *\n * You can get a Ref either by looking at the roots of the transaction,\n * creating a new object or reading it from an objects references with\n * {@link Transaction#read}.\n */\nclass Ref {\n\t/** @private */\n\tconstructor(varId, read, write) {\n\t\tif (varId instanceof Uint8Array == false) {\n\t\t\tthrow new TypeError(\"var id must be a uint8 array\")\n\t\t}\n\n\t\t/**\n\t\t * The goshawkdb id of the object this reference refers to.\n\t\t * @private\n\t\t */\n\t\tthis.varId = varId\n\n\t\t/**\n\t\t * Whether this reference can be used to read the object.\n\t\t * @type {boolean}\n\t\t */\n\t\tthis.read = read\n\t\t/**\n\t\t * Whether this reference can be used to write the object.\n\t\t * @type {boolean}\n\t\t */\n\t\tthis.write = write\n\t}\n\n\t/** @private */\n\tstatic fromCapRef(capability, varId) {\n\t\treturn new Ref(varId, capability.Read, capability.Write)\n\t}\n\n\t/** @private */\n\tstatic fromMessage(msg) {\n\t\treturn Ref.fromCapRef(msg.Capability, msg.VarId)\n\t}\n\n\t/**\n\t * Checks to see if this reference and the other reference\n\t * refer to the same object in the database.\n\t * @param {Ref} otherRef\n\t * @returns {boolean} true if the other reference points to the same object, false otherwise.\n\t */\n\tsameReferent(otherRef) {\n\t\treturn binaryToHex(this.varId) === binaryToHex(otherRef.varId)\n\t}\n\n\t/**\n\t * @returns {Ref} a new reference the same as this one, but that cannot be used to read.\n\t */\n\tdenyRead() {\n\t\treturn new Ref(this.varId, false, this.write)\n\t}\n\n\t/**\n\t * @returns {Ref} a new reference the same as this one, but that cannot be used to write.\n\t */\n\tdenyWrite() {\n\t\treturn new Ref(this.varId, this.read, false)\n\t}\n\n\t/** @returns {string} a representation of this reference.  String representations are for debug only and are not considered part of the public API. */\n\ttoString() {\n\t\treturn `{Ref ${binaryToHex(this.varId)} ${this.read ? 'r' : '-'}${this.write ? 'w' : '-'}}`\n\t}\n\n\t/** @private */\n\ttoMessage() {\n\t\treturn {VarId: this.varId.buffer, Capability: {Read: this.read, Write: this.write}}\n\t}\n}\n\nmodule.exports = Ref",
@@ -3015,7 +3047,7 @@
     "lineNumber": 1
   },
   {
-    "__docId__": 129,
+    "__docId__": 130,
     "kind": "variable",
     "name": "binaryToHex",
     "memberof": "src/ref.js",
@@ -3041,7 +3073,7 @@
     }
   },
   {
-    "__docId__": 130,
+    "__docId__": 131,
     "kind": "class",
     "name": "Ref",
     "memberof": "src/ref.js",
@@ -3056,7 +3088,7 @@
     "interface": false
   },
   {
-    "__docId__": 131,
+    "__docId__": 132,
     "kind": "constructor",
     "name": "constructor",
     "memberof": "src/ref.js~Ref",
@@ -3089,7 +3121,7 @@
     ]
   },
   {
-    "__docId__": 132,
+    "__docId__": 133,
     "kind": "member",
     "name": "varId",
     "memberof": "src/ref.js~Ref",
@@ -3105,7 +3137,7 @@
     }
   },
   {
-    "__docId__": 133,
+    "__docId__": 134,
     "kind": "member",
     "name": "read",
     "memberof": "src/ref.js~Ref",
@@ -3124,7 +3156,7 @@
     }
   },
   {
-    "__docId__": 134,
+    "__docId__": 135,
     "kind": "member",
     "name": "write",
     "memberof": "src/ref.js~Ref",
@@ -3143,7 +3175,7 @@
     }
   },
   {
-    "__docId__": 135,
+    "__docId__": 136,
     "kind": "method",
     "name": "fromCapRef",
     "memberof": "src/ref.js~Ref",
@@ -3175,7 +3207,7 @@
     }
   },
   {
-    "__docId__": 136,
+    "__docId__": 137,
     "kind": "method",
     "name": "fromMessage",
     "memberof": "src/ref.js~Ref",
@@ -3201,7 +3233,7 @@
     }
   },
   {
-    "__docId__": 137,
+    "__docId__": 138,
     "kind": "method",
     "name": "sameReferent",
     "memberof": "src/ref.js~Ref",
@@ -3240,7 +3272,7 @@
     }
   },
   {
-    "__docId__": 138,
+    "__docId__": 139,
     "kind": "method",
     "name": "denyRead",
     "memberof": "src/ref.js~Ref",
@@ -3268,7 +3300,7 @@
     }
   },
   {
-    "__docId__": 139,
+    "__docId__": 140,
     "kind": "method",
     "name": "denyWrite",
     "memberof": "src/ref.js~Ref",
@@ -3296,7 +3328,7 @@
     }
   },
   {
-    "__docId__": 140,
+    "__docId__": 141,
     "kind": "method",
     "name": "toString",
     "memberof": "src/ref.js~Ref",
@@ -3324,7 +3356,7 @@
     }
   },
   {
-    "__docId__": 141,
+    "__docId__": 142,
     "kind": "method",
     "name": "toMessage",
     "memberof": "src/ref.js~Ref",
@@ -3343,10 +3375,10 @@
     }
   },
   {
-    "__docId__": 142,
+    "__docId__": 143,
     "kind": "file",
     "name": "src/transaction.js",
-    "content": "const Ref = require('./ref')\nconst {TransactionRetryNeeded, CapabilityDenied} = require('./errors')\nconst {toArrayBuffer} = require('./utils')\n\n/**\n * A transaction represents an attempt to make a modification to the database.\n *\n * The code associated with it may be required to run multiple times before it\n * successfully completes.  Care must be taken to make sure this will not\n * break the client environment.\n *\n * Transactions are acquired by calling {@link Connection#transact}.\n */\nclass Transaction {\n\n\t/** @private */\n\tconstructor(connection, txnFn, onSuccess, onFail, parentCache) {\n\t\t/** @private */\n\t\tthis.onSuccess = onSuccess;\n\n\t\t/** @private */\n\t\tthis.onFail = onFail;\n\n\t\t/** @private */\n\t\tthis.shouldRetry = false\n\n\t\t/**\n\t\t * The roots that this client has access to.\n\t\t * @type {{string: Ref}}\n\t\t */\n\t\tthis.roots = connection.roots\n\n\t\t/** @private */\n\t\tthis.fn = txnFn\n\n\t\t/** @private */\n\t\tthis.connection = connection\n\n\t\t/** @private */\n\t\tthis.parentCache = parentCache\n\n\t\t/** @private */\n\t\tthis.cache = parentCache.getTemporaryView()\n\t}\n\n\t/**\n\t * Reads the value and references from an object pointed to by a Ref.\n\t * @param {Ref} ref a reference to the object to read from.\n\t * @returns {{value:ArrayBuffer, refs:Ref[]}}\n\t * @throws {CapabilityDenied} if ref does not have read capability.\n\t * @throws {TransactionRetryNeeded} if the object is not in cache. Do not catch this without rethrowing it.\n\t */\n\tread(ref) {\n\t\tif (ref instanceof Ref == false) {\n\t\t\tthrow new TypeError(`Can only read a reference; you tried to read from ${String(ref)}`)\n\t\t}\n\t\tif (!ref.read) {\n\t\t\tthrow new CapabilityDenied(`Unable to read using reference ${ref.toString()}, as it doesn't allow reads.`)\n\t\t}\n\t\tconst id = ref.varId\n\t\tconst cacheEntry = this.cache.get(id)\n\t\treturn cacheEntry.read()\n\t}\n\n\t/**\n\t * Changes the value an dreferences of an object pointed to by a Ref.\n\t * @param {Ref} ref a reference to the object to be written.\n\t * @param {ArrayBuffer|Buffer|TypedArray} value the new value to be stored in the object.\n\t * @param {Ref[]} refs the references from this object to other objects.\n\t */\n\twrite(ref, value, refs) {\n\t\tif (ref instanceof Ref == false) {\n\t\t\tthrow new TypeError(`Can only write with a reference; you tried to write to ${String(ref)}.`)\n\t\t}\n\t\tif (!ref.write) {\n\t\t\tthrow new CapabilityDenied(`Unable to write using reference ${ref.toString()}, as it doesn't allow writes.`)\n\t\t}\n\t\tvalue = toArrayBuffer(value)\n\t\tconst id = ref.varId\n\t\tconst cacheEntry = this.cache.get(id)\n\t\tcacheEntry.write(value, refs)\n\t}\n\n\t/**\n\t * Creates a new object and returns the reference to it.\n\t * @param {ArrayBuffer|Buffer|TypedArray} value the value that the new object will be created with.\n\t * @param {Ref[]} refs the references that the new object will be created with.  This will default to the empty array.\n\t * @returns {Ref} a reference to the newly created object.\n\t */\n\tcreate(value, refs = []) {\n\t\tvalue = toArrayBuffer(value)\n\t\tconst newId = this.connection.getNewObjectId()\n\t\tconst cacheEntry = this.cache.get(newId)\n\t\tcacheEntry.create(value, refs)\n\t\treturn new Ref(new Uint8Array(newId), true, true)\n\t}\n\n\t/**\n\t * Stops the current transaction, and waits for any of the values that have been\n\t * read to change before rerunning.  No further transactions will be processed while\n\t * a transaction is waiting.\n\t *\n\t * Internally, this method throws a TransactionRetryNeeded error.  If you catch it\n\t * and do not rethrow it, you will stop the retry behaviour from working.\n\t *\n\t * @throws {TransactionRetryNeeded}\n\t */\n\tretry() {\n\t\tthis.shouldRetry = true\n\t\tthrow new TransactionRetryNeeded(\"Transaction code called retry.\")\n\t}\n\n\t/**\n\t * Runs a nested transaction inside this transaction.\n\t *\n\t * If a nested transaction fails, its modifications will not be seen by the parent transaction.\n\t *\n\t * @param {function} fn the transaction function.  This function may be run multiple times and should rethrow any TransactionRetryNeeded exceptions.\n\t * @returns {Promise<*, Error>} a promise that resolves to the result of the transaction function once the transaction submits or an error if it cannot.\n\t */\n\ttransact(fn) {\n\t\tif (fn instanceof Function === false) {\n\t\t\tthrow new TypeError(\"Transaction argument must be a function.\")\n\t\t}\n\t\tconst nestedTransaction = new Transaction(this.connection, fn, this.onSuccess, this.onFail, this.cache)\n\t\tthis.connection.currentTransaction = nestedTransaction\n\t\tlet resultPromise = undefined\n\t\ttry {\n\t\t\tresultPromise = Promise.resolve(fn(nestedTransaction))\n\t\t} catch (e) {\n\t\t\tif (e instanceof TransactionRetryNeeded) {\n\t\t\t\tthis.shouldRetry = true\n\t\t\t}\n\t\t\tthis.connection.currentTransaction = this\n\t\t\tthrow e\n\t\t}\n\n\t\treturn resultPromise\n\t\t\t.then((result) => {\n\t\t\t\tthis.connection.currentTransaction = this\n\t\t\t\tnestedTransaction.promoteCache(undefined)\n\t\t\t\treturn result\n\t\t\t})\n\t}\n\n\t// private API\n\n\t/** @private\n\t * Prepares this transaction to be run again.*/\n\treset() {\n\t\tthis.cache = this.parentCache.getTemporaryView()\n\t\tthis.shouldRetry = false\n\t}\n\n\t/** @private\n\t * This transaction has completed successfully, notify the parent.*/\n\tpromoteCache(finalTxnId) {\n\t\tthis.cache.promote(finalTxnId)\n\t}\n\n\t/** @private */\n\ttoMessage(txnId) {\n\t\tconst actions = this.cache.getActions(this.connection.namespace)\n\t\treturn {\n\t\t\tClientTxnSubmission: {\n\t\t\t\tId: txnId,\n\t\t\t\tRetry: this.shouldRetry,\n\t\t\t\tActions: actions\n\t\t\t}\n\t\t}\n\t}\n}\n\nmodule.exports = Transaction",
+    "content": "const Ref = require('./ref')\nconst {TransactionRetryNeeded, CapabilityDenied} = require('./errors')\nconst {toArrayBuffer} = require('./utils')\n\n/**\n * A transaction represents an attempt to make a modification to the database.\n *\n * The code associated with it may be required to run multiple times before it\n * successfully completes.  Care must be taken to make sure this will not\n * break the client environment.\n *\n * Transactions are acquired by calling {@link Connection#transact}.\n */\nclass Transaction {\n\n\t/** @private */\n\tconstructor(connection, txnFn, onSuccess, onFail, parentCache) {\n\t\t/** @private */\n\t\tthis.onSuccess = onSuccess;\n\n\t\t/** @private */\n\t\tthis.onFail = onFail;\n\n\t\t/** @private */\n\t\tthis.shouldRetry = false\n\n\t\t/** @private */\n\t\tthis.hasCacheMissed = false\n\n\t\t/**\n\t\t * The roots that this client has access to.\n\t\t * @type {{string: Ref}}\n\t\t */\n\t\tthis.roots = connection.roots\n\n\t\t/** @private */\n\t\tthis.fn = txnFn\n\n\t\t/** @private */\n\t\tthis.connection = connection\n\n\t\t/** @private */\n\t\tthis.parentCache = parentCache\n\n\t\t/** @private */\n\t\tthis.cache = parentCache.getTemporaryView()\n\t}\n\n\t/**\n\t * Reads the value and references from an object pointed to by a Ref.\n\t * @param {Ref} ref a reference to the object to read from.\n\t * @returns {{value:ArrayBuffer, refs:Ref[]}}\n\t * @throws {CapabilityDenied} if ref does not have read capability.\n\t * @throws {TransactionRetryNeeded} if the object is not in cache. Do not catch this without rethrowing it.\n\t */\n\tread(ref) {\n\t\tif (ref instanceof Ref == false) {\n\t\t\tthrow new TypeError(`Can only read a reference; you tried to read from ${String(ref)}`)\n\t\t}\n\t\tif (!ref.read) {\n\t\t\tthrow new CapabilityDenied(`Unable to read using reference ${ref.toString()}, as it doesn't allow reads.`)\n\t\t}\n\t\tconst id = ref.varId\n\t\tconst cacheEntry = this.cache.get(id)\n\t\tif (cacheEntry.hasData() === false) {\n\t\t\tthis.hasCacheMissed = true\n\t\t}\n\t\treturn cacheEntry.read()\n\t}\n\n\t/**\n\t * Changes the value an dreferences of an object pointed to by a Ref.\n\t * @param {Ref} ref a reference to the object to be written.\n\t * @param {ArrayBuffer|Buffer|TypedArray} value the new value to be stored in the object.\n\t * @param {Ref[]} refs the references from this object to other objects.\n\t */\n\twrite(ref, value, refs) {\n\t\tif (ref instanceof Ref == false) {\n\t\t\tthrow new TypeError(`Can only write with a reference; you tried to write to ${String(ref)}.`)\n\t\t}\n\t\tif (!ref.write) {\n\t\t\tthrow new CapabilityDenied(`Unable to write using reference ${ref.toString()}, as it doesn't allow writes.`)\n\t\t}\n\t\tvalue = toArrayBuffer(value)\n\t\tconst id = ref.varId\n\t\tconst cacheEntry = this.cache.get(id)\n\t\tcacheEntry.write(value, refs)\n\t}\n\n\t/**\n\t * Creates a new object and returns the reference to it.\n\t * @param {ArrayBuffer|Buffer|TypedArray} value the value that the new object will be created with.\n\t * @param {Ref[]} refs the references that the new object will be created with.  This will default to the empty array.\n\t * @returns {Ref} a reference to the newly created object.\n\t */\n\tcreate(value, refs = []) {\n\t\tvalue = toArrayBuffer(value)\n\t\tconst newId = this.connection.getNewObjectId()\n\t\tconst cacheEntry = this.cache.get(newId)\n\t\tcacheEntry.create(value, refs)\n\t\treturn new Ref(new Uint8Array(newId), true, true)\n\t}\n\n\t/**\n\t * Stops the current transaction, and waits for any of the values that have been\n\t * read to change before rerunning.  No further transactions will be processed while\n\t * a transaction is waiting.\n\t *\n\t * Internally, this method throws a TransactionRetryNeeded error.  If you catch it\n\t * and do not rethrow it, you will stop the retry behaviour from working.\n\t *\n\t * @throws {TransactionRetryNeeded}\n\t */\n\tretry() {\n\t\tthis.shouldRetry = true\n\t\tthrow new TransactionRetryNeeded(\"Transaction code called retry.\")\n\t}\n\n\t/**\n\t * Runs a nested transaction inside this transaction.\n\t *\n\t * If a nested transaction fails, its modifications will not be seen by the parent transaction.\n\t *\n\t * @param {function} fn the transaction function.  This function may be run multiple times and should rethrow any TransactionRetryNeeded exceptions.\n\t * @returns {Promise<*, Error>} a promise that resolves to the result of the transaction function once the transaction submits or an error if it cannot.\n\t */\n\ttransact(fn) {\n\t\tif (fn instanceof Function === false) {\n\t\t\tthrow new TypeError(\"Transaction argument must be a function.\")\n\t\t}\n\t\tconst nestedTransaction = new Transaction(this.connection, fn, this.onSuccess, this.onFail, this.cache)\n\t\tthis.connection.currentTransaction = nestedTransaction\n\t\tlet resultPromise = undefined\n\t\ttry {\n\t\t\tresultPromise = Promise.resolve(fn(nestedTransaction))\n\t\t} catch (e) {\n\t\t\tif (e instanceof TransactionRetryNeeded) {\n\t\t\t\tthis.shouldRetry = true\n\t\t\t}\n\t\t\tthis.connection.currentTransaction = this\n\t\t\tthrow e\n\t\t}\n\n\t\treturn resultPromise\n\t\t\t.then((result) => {\n\t\t\t\tthis.connection.currentTransaction = this\n\t\t\t\tnestedTransaction.promoteCache(undefined)\n\t\t\t\treturn result\n\t\t\t})\n\t}\n\n\t// private API\n\n\t/** @private\n\t * Prepares this transaction to be run again.*/\n\treset() {\n\t\tthis.cache = this.parentCache.getTemporaryView()\n\t\tthis.shouldRetry = false\n\t\tthis.hasCacheMissed = false\n\t}\n\n\t/** @private\n\t * This transaction has completed successfully, notify the parent.*/\n\tpromoteCache(finalTxnId) {\n\t\tthis.cache.promote(finalTxnId)\n\t}\n\n\t/** @private */\n\ttoMessage(txnId) {\n\t\tconst anyChange = (entry) => entry.hasBeenCreated || entry.hasBeenWritten || entry.hasBeenRead\n\t\tconst justReads = (entry) => entry.hasBeenRead\n\t\tconst justCacheMisses = (entry) => entry.hasBeenRead && entry.hasData() === false\n\n\t\tlet filter = anyChange\n\t\tif (this.shouldRetry) {\n\t\t\tfilter = justReads\n\t\t} else if (this.hasCacheMissed) {\n\t\t\tfilter = justCacheMisses\n\t\t}\n\n\t\tconst actions = this.cache.getActions(this.connection.namespace, filter)\n\t\treturn {\n\t\t\tClientTxnSubmission: {\n\t\t\t\tId: txnId,\n\t\t\t\tRetry: this.shouldRetry,\n\t\t\t\tActions: actions\n\t\t\t}\n\t\t}\n\t}\n}\n\nmodule.exports = Transaction",
     "static": true,
     "longname": "src/transaction.js",
     "access": null,
@@ -3354,7 +3386,7 @@
     "lineNumber": 1
   },
   {
-    "__docId__": 143,
+    "__docId__": 144,
     "kind": "variable",
     "name": "Ref",
     "memberof": "src/transaction.js",
@@ -3380,7 +3412,7 @@
     }
   },
   {
-    "__docId__": 144,
+    "__docId__": 145,
     "kind": "variable",
     "name": "TransactionRetryNeeded",
     "memberof": "src/transaction.js",
@@ -3406,7 +3438,7 @@
     }
   },
   {
-    "__docId__": 145,
+    "__docId__": 146,
     "kind": "variable",
     "name": "toArrayBuffer",
     "memberof": "src/transaction.js",
@@ -3432,7 +3464,7 @@
     }
   },
   {
-    "__docId__": 146,
+    "__docId__": 147,
     "kind": "class",
     "name": "Transaction",
     "memberof": "src/transaction.js",
@@ -3447,7 +3479,7 @@
     "interface": false
   },
   {
-    "__docId__": 147,
+    "__docId__": 148,
     "kind": "constructor",
     "name": "constructor",
     "memberof": "src/transaction.js~Transaction",
@@ -3492,7 +3524,7 @@
     ]
   },
   {
-    "__docId__": 148,
+    "__docId__": 149,
     "kind": "member",
     "name": "onSuccess",
     "memberof": "src/transaction.js~Transaction",
@@ -3508,7 +3540,7 @@
     }
   },
   {
-    "__docId__": 149,
+    "__docId__": 150,
     "kind": "member",
     "name": "onFail",
     "memberof": "src/transaction.js~Transaction",
@@ -3524,7 +3556,7 @@
     }
   },
   {
-    "__docId__": 150,
+    "__docId__": 151,
     "kind": "member",
     "name": "shouldRetry",
     "memberof": "src/transaction.js~Transaction",
@@ -3540,7 +3572,23 @@
     }
   },
   {
-    "__docId__": 151,
+    "__docId__": 152,
+    "kind": "member",
+    "name": "hasCacheMissed",
+    "memberof": "src/transaction.js~Transaction",
+    "static": false,
+    "longname": "src/transaction.js~Transaction#hasCacheMissed",
+    "access": "private",
+    "description": null,
+    "lineNumber": 28,
+    "type": {
+      "types": [
+        "boolean"
+      ]
+    }
+  },
+  {
+    "__docId__": 153,
     "kind": "member",
     "name": "roots",
     "memberof": "src/transaction.js~Transaction",
@@ -3548,7 +3596,7 @@
     "longname": "src/transaction.js~Transaction#roots",
     "access": null,
     "description": "The roots that this client has access to.",
-    "lineNumber": 31,
+    "lineNumber": 34,
     "type": {
       "nullable": null,
       "types": [
@@ -3559,28 +3607,12 @@
     }
   },
   {
-    "__docId__": 152,
+    "__docId__": 154,
     "kind": "member",
     "name": "fn",
     "memberof": "src/transaction.js~Transaction",
     "static": false,
     "longname": "src/transaction.js~Transaction#fn",
-    "access": "private",
-    "description": null,
-    "lineNumber": 34,
-    "type": {
-      "types": [
-        "*"
-      ]
-    }
-  },
-  {
-    "__docId__": 153,
-    "kind": "member",
-    "name": "connection",
-    "memberof": "src/transaction.js~Transaction",
-    "static": false,
-    "longname": "src/transaction.js~Transaction#connection",
     "access": "private",
     "description": null,
     "lineNumber": 37,
@@ -3591,12 +3623,12 @@
     }
   },
   {
-    "__docId__": 154,
+    "__docId__": 155,
     "kind": "member",
-    "name": "parentCache",
+    "name": "connection",
     "memberof": "src/transaction.js~Transaction",
     "static": false,
-    "longname": "src/transaction.js~Transaction#parentCache",
+    "longname": "src/transaction.js~Transaction#connection",
     "access": "private",
     "description": null,
     "lineNumber": 40,
@@ -3607,12 +3639,12 @@
     }
   },
   {
-    "__docId__": 155,
+    "__docId__": 156,
     "kind": "member",
-    "name": "cache",
+    "name": "parentCache",
     "memberof": "src/transaction.js~Transaction",
     "static": false,
-    "longname": "src/transaction.js~Transaction#cache",
+    "longname": "src/transaction.js~Transaction#parentCache",
     "access": "private",
     "description": null,
     "lineNumber": 43,
@@ -3623,7 +3655,23 @@
     }
   },
   {
-    "__docId__": 156,
+    "__docId__": 157,
+    "kind": "member",
+    "name": "cache",
+    "memberof": "src/transaction.js~Transaction",
+    "static": false,
+    "longname": "src/transaction.js~Transaction#cache",
+    "access": "private",
+    "description": null,
+    "lineNumber": 46,
+    "type": {
+      "types": [
+        "*"
+      ]
+    }
+  },
+  {
+    "__docId__": 158,
     "kind": "method",
     "name": "read",
     "memberof": "src/transaction.js~Transaction",
@@ -3633,7 +3681,7 @@
     "longname": "src/transaction.js~Transaction#read",
     "access": null,
     "description": "Reads the value and references from an object pointed to by a Ref.",
-    "lineNumber": 53,
+    "lineNumber": 56,
     "unknown": [
       {
         "tagName": "@returns",
@@ -3676,7 +3724,30 @@
     ]
   },
   {
-    "__docId__": 157,
+    "__docId__": 159,
+    "kind": "member",
+    "name": "hasCacheMissed",
+    "memberof": "src/transaction.js~Transaction",
+    "static": false,
+    "longname": "src/transaction.js~Transaction#hasCacheMissed",
+    "access": null,
+    "description": null,
+    "lineNumber": 66,
+    "undocument": true,
+    "unknown": [
+      {
+        "tagName": "@_undocument",
+        "tagValue": ""
+      }
+    ],
+    "type": {
+      "types": [
+        "boolean"
+      ]
+    }
+  },
+  {
+    "__docId__": 160,
     "kind": "method",
     "name": "write",
     "memberof": "src/transaction.js~Transaction",
@@ -3686,7 +3757,7 @@
     "longname": "src/transaction.js~Transaction#write",
     "access": null,
     "description": "Changes the value an dreferences of an object pointed to by a Ref.",
-    "lineNumber": 71,
+    "lineNumber": 77,
     "params": [
       {
         "nullable": null,
@@ -3723,7 +3794,7 @@
     ]
   },
   {
-    "__docId__": 158,
+    "__docId__": 161,
     "kind": "method",
     "name": "create",
     "memberof": "src/transaction.js~Transaction",
@@ -3733,7 +3804,7 @@
     "longname": "src/transaction.js~Transaction#create",
     "access": null,
     "description": "Creates a new object and returns the reference to it.",
-    "lineNumber": 90,
+    "lineNumber": 96,
     "unknown": [
       {
         "tagName": "@returns",
@@ -3774,7 +3845,7 @@
     }
   },
   {
-    "__docId__": 159,
+    "__docId__": 162,
     "kind": "method",
     "name": "retry",
     "memberof": "src/transaction.js~Transaction",
@@ -3784,7 +3855,7 @@
     "longname": "src/transaction.js~Transaction#retry",
     "access": null,
     "description": "Stops the current transaction, and waits for any of the values that have been\nread to change before rerunning.  No further transactions will be processed while\na transaction is waiting.\n\nInternally, this method throws a TransactionRetryNeeded error.  If you catch it\nand do not rethrow it, you will stop the retry behaviour from working.",
-    "lineNumber": 108,
+    "lineNumber": 114,
     "params": [],
     "throws": [
       {
@@ -3796,7 +3867,7 @@
     ]
   },
   {
-    "__docId__": 160,
+    "__docId__": 163,
     "kind": "member",
     "name": "shouldRetry",
     "memberof": "src/transaction.js~Transaction",
@@ -3804,7 +3875,7 @@
     "longname": "src/transaction.js~Transaction#shouldRetry",
     "access": null,
     "description": null,
-    "lineNumber": 109,
+    "lineNumber": 115,
     "undocument": true,
     "unknown": [
       {
@@ -3819,7 +3890,7 @@
     }
   },
   {
-    "__docId__": 161,
+    "__docId__": 164,
     "kind": "method",
     "name": "transact",
     "memberof": "src/transaction.js~Transaction",
@@ -3829,7 +3900,7 @@
     "longname": "src/transaction.js~Transaction#transact",
     "access": null,
     "description": "Runs a nested transaction inside this transaction.\n\nIf a nested transaction fails, its modifications will not be seen by the parent transaction.",
-    "lineNumber": 121,
+    "lineNumber": 127,
     "unknown": [
       {
         "tagName": "@returns",
@@ -3858,66 +3929,6 @@
     }
   },
   {
-    "__docId__": 162,
-    "kind": "member",
-    "name": "shouldRetry",
-    "memberof": "src/transaction.js~Transaction",
-    "static": false,
-    "longname": "src/transaction.js~Transaction#shouldRetry",
-    "access": null,
-    "description": null,
-    "lineNumber": 132,
-    "undocument": true,
-    "unknown": [
-      {
-        "tagName": "@_undocument",
-        "tagValue": ""
-      }
-    ],
-    "type": {
-      "types": [
-        "boolean"
-      ]
-    }
-  },
-  {
-    "__docId__": 163,
-    "kind": "method",
-    "name": "reset",
-    "memberof": "src/transaction.js~Transaction",
-    "generator": false,
-    "async": false,
-    "static": false,
-    "longname": "src/transaction.js~Transaction#reset",
-    "access": "private",
-    "description": null,
-    "lineNumber": 150,
-    "params": []
-  },
-  {
-    "__docId__": 164,
-    "kind": "member",
-    "name": "cache",
-    "memberof": "src/transaction.js~Transaction",
-    "static": false,
-    "longname": "src/transaction.js~Transaction#cache",
-    "access": null,
-    "description": null,
-    "lineNumber": 151,
-    "undocument": true,
-    "unknown": [
-      {
-        "tagName": "@_undocument",
-        "tagValue": ""
-      }
-    ],
-    "type": {
-      "types": [
-        "*"
-      ]
-    }
-  },
-  {
     "__docId__": 165,
     "kind": "member",
     "name": "shouldRetry",
@@ -3926,7 +3937,7 @@
     "longname": "src/transaction.js~Transaction#shouldRetry",
     "access": null,
     "description": null,
-    "lineNumber": 152,
+    "lineNumber": 138,
     "undocument": true,
     "unknown": [
       {
@@ -3943,6 +3954,89 @@
   {
     "__docId__": 166,
     "kind": "method",
+    "name": "reset",
+    "memberof": "src/transaction.js~Transaction",
+    "generator": false,
+    "async": false,
+    "static": false,
+    "longname": "src/transaction.js~Transaction#reset",
+    "access": "private",
+    "description": null,
+    "lineNumber": 156,
+    "params": []
+  },
+  {
+    "__docId__": 167,
+    "kind": "member",
+    "name": "cache",
+    "memberof": "src/transaction.js~Transaction",
+    "static": false,
+    "longname": "src/transaction.js~Transaction#cache",
+    "access": null,
+    "description": null,
+    "lineNumber": 157,
+    "undocument": true,
+    "unknown": [
+      {
+        "tagName": "@_undocument",
+        "tagValue": ""
+      }
+    ],
+    "type": {
+      "types": [
+        "*"
+      ]
+    }
+  },
+  {
+    "__docId__": 168,
+    "kind": "member",
+    "name": "shouldRetry",
+    "memberof": "src/transaction.js~Transaction",
+    "static": false,
+    "longname": "src/transaction.js~Transaction#shouldRetry",
+    "access": null,
+    "description": null,
+    "lineNumber": 158,
+    "undocument": true,
+    "unknown": [
+      {
+        "tagName": "@_undocument",
+        "tagValue": ""
+      }
+    ],
+    "type": {
+      "types": [
+        "boolean"
+      ]
+    }
+  },
+  {
+    "__docId__": 169,
+    "kind": "member",
+    "name": "hasCacheMissed",
+    "memberof": "src/transaction.js~Transaction",
+    "static": false,
+    "longname": "src/transaction.js~Transaction#hasCacheMissed",
+    "access": null,
+    "description": null,
+    "lineNumber": 159,
+    "undocument": true,
+    "unknown": [
+      {
+        "tagName": "@_undocument",
+        "tagValue": ""
+      }
+    ],
+    "type": {
+      "types": [
+        "boolean"
+      ]
+    }
+  },
+  {
+    "__docId__": 170,
+    "kind": "method",
     "name": "promoteCache",
     "memberof": "src/transaction.js~Transaction",
     "generator": false,
@@ -3951,7 +4045,7 @@
     "longname": "src/transaction.js~Transaction#promoteCache",
     "access": "private",
     "description": null,
-    "lineNumber": 157,
+    "lineNumber": 164,
     "params": [
       {
         "name": "finalTxnId",
@@ -3962,7 +4056,7 @@
     ]
   },
   {
-    "__docId__": 167,
+    "__docId__": 171,
     "kind": "method",
     "name": "toMessage",
     "memberof": "src/transaction.js~Transaction",
@@ -3972,7 +4066,7 @@
     "longname": "src/transaction.js~Transaction#toMessage",
     "access": "private",
     "description": null,
-    "lineNumber": 162,
+    "lineNumber": 169,
     "params": [
       {
         "name": "txnId",
@@ -3988,7 +4082,7 @@
     }
   },
   {
-    "__docId__": 168,
+    "__docId__": 172,
     "kind": "file",
     "name": "src/uint64.js",
     "content": "const {binaryToHex, toArrayBuffer} = require('./utils')\n\n/**\n * A representation of a Uint64, since otherwise javascript can't do them.\n */\nclass Uint64 {\n\t/**\n\t * Makes a new Uint64 from a Uint8Array\n\t * @param {Uint8Array} uintArray an array of bytes to be used to represent this 64 bit integer.\n\t */\n\tconstructor(uintArray = new Uint8Array(8)) {\n\t\tif (uintArray instanceof Uint8Array === false) {\n\t\t\tthrow new TypeError(\"Uint64 source must be a Uint8Array, Uint64.from(bytes), Uint64.fromTypedArray, Uint64.fromArrayBuffer might suit your needs better.\")\n\t\t}\n\t\t/**\n\t\t * @private\n\t\t * @type {Uint8Array}\n\t\t */\n\t\tthis.data = uintArray\n\n\t\t/**\n\t\t * An arraybuffer representation of this value.\n\t\t * @type {ArrayBuffer}\n\t\t */\n\t\tthis.buffer = this.data.buffer\n\t}\n\n\t/**\n\t * Creates a Uint64 from bytes\n\t * @param {number[]} bytes\n\t * @returns {Uint64}\n\t */\n\tstatic from(...bytes) {\n\t\tconst result = new Uint64()\n\t\tresult.set(...bytes)\n\t\treturn result\n\t}\n\n\t/**\n\t * Creates a Uint64 from the first 8 bytes of one of the binary forms.\n\t * @param {ArrayBuffer|Buffer|TypedArray} binary\n\t * @returns {Uint64}\n\t */\n\tstatic fromBinary(binary) {\n\t\treturn Uint64.fromArrayBuffer(toArrayBuffer(binary))\n\t}\n\n\t/**\n\t * Creates a Uint64 from an array buffer. Potentially with a byte offset.\n\t * Only the first 8 bytes will be taken.\n\t * @param {ArrayBuffer} arrayBuffer\n\t * @param {number} byteOffset the starting position in the array buffer. Defaults to 0.\n\t * @returns {Uint64}\n\t */\n\tstatic fromArrayBuffer(arrayBuffer, byteOffset = 0) {\n\t\treturn new Uint64(new Uint8Array(arrayBuffer.slice(byteOffset, byteOffset + 8)))\n\t}\n\n\t/**\n\t * Modifies this Uint64 to represent the succeeding integer.  If\n\t * this represents the largest integer the Uint64 can represent, it will wrap to 0.\n\t * @returns {Uint64} this, modified Uint64.\n\t */\n\tinc() {\n\t\tfor (let idx = this.data.length - 1; idx >= 0; --idx) {\n\t\t\tthis.data[idx] += 1\n\t\t\tif (this.data[idx] != 0) {\n\t\t\t\tbreak\n\t\t\t}\n\t\t}\n\t\treturn this\n\t}\n\n\t/**\n\t * @returns {Uint64} a copy of this Uint64.\n\t */\n\tclone() {\n\t\tconst dst = new ArrayBuffer(this.data.byteLength)\n\t\tconst uintArray = new Uint8Array(dst)\n\t\tuintArray.set(this.data)\n\t\treturn new Uint64(uintArray)\n\t}\n\n\t/**\n\t * Set the last last bytes.length bytes.\n\t * @param {number[]} bytes the bytes to set.\n\t */\n\tset(...bytes) {\n\t\tif (bytes[0] instanceof Uint64) {\n\t\t\tthis.data.set(bytes[0].data, 0)\n\t\t} else {\n\t\t\tfor (let i = 0; i < bytes.length; ++i) {\n\t\t\t\tthis.data[this.data.length - bytes.length + i] = bytes[i]\n\t\t\t}\n\t\t}\n\t}\n\n\t/**\n\t * Returns an array buffer where this Uint64 is the first 8 bytes and\n\t * the passed buffer is the subsequent bytes.\n\t * @param {ArrayBuffer|Buffer|TypedArray} buffer the subsequent bytes.\n\t * @returns {ArrayBuffer}\n\t */\n\tconcat(buffer) {\n\t\tbuffer = toArrayBuffer(buffer)\n\t\tconst result = new Uint8Array(this.data.length + buffer.byteLength)\n\t\tresult.set(this.data, 0)\n\t\tresult.set(new Uint8Array(buffer), this.data.length)\n\t\treturn result.buffer\n\t}\n\n\t/**\n\t * A string representation of this Uint64.  This string representation is for debugging purposes\n\t * and does not form part of the public API.\n\t */\n\ttoString() {\n\t\treturn binaryToHex(this.data)\n\t}\n}\n\nmodule.exports = Uint64",
@@ -3999,7 +4093,7 @@
     "lineNumber": 1
   },
   {
-    "__docId__": 169,
+    "__docId__": 173,
     "kind": "variable",
     "name": "binaryToHex",
     "memberof": "src/uint64.js",
@@ -4025,7 +4119,7 @@
     }
   },
   {
-    "__docId__": 170,
+    "__docId__": 174,
     "kind": "class",
     "name": "Uint64",
     "memberof": "src/uint64.js",
@@ -4040,7 +4134,7 @@
     "interface": false
   },
   {
-    "__docId__": 171,
+    "__docId__": 175,
     "kind": "constructor",
     "name": "constructor",
     "memberof": "src/uint64.js~Uint64",
@@ -4065,7 +4159,7 @@
     ]
   },
   {
-    "__docId__": 172,
+    "__docId__": 176,
     "kind": "member",
     "name": "data",
     "memberof": "src/uint64.js~Uint64",
@@ -4084,7 +4178,7 @@
     }
   },
   {
-    "__docId__": 173,
+    "__docId__": 177,
     "kind": "member",
     "name": "buffer",
     "memberof": "src/uint64.js~Uint64",
@@ -4103,7 +4197,7 @@
     }
   },
   {
-    "__docId__": 174,
+    "__docId__": 178,
     "kind": "method",
     "name": "from",
     "memberof": "src/uint64.js~Uint64",
@@ -4142,7 +4236,7 @@
     }
   },
   {
-    "__docId__": 175,
+    "__docId__": 179,
     "kind": "method",
     "name": "fromBinary",
     "memberof": "src/uint64.js~Uint64",
@@ -4183,7 +4277,7 @@
     }
   },
   {
-    "__docId__": 176,
+    "__docId__": 180,
     "kind": "method",
     "name": "fromArrayBuffer",
     "memberof": "src/uint64.js~Uint64",
@@ -4232,7 +4326,7 @@
     }
   },
   {
-    "__docId__": 177,
+    "__docId__": 181,
     "kind": "method",
     "name": "inc",
     "memberof": "src/uint64.js~Uint64",
@@ -4260,7 +4354,7 @@
     }
   },
   {
-    "__docId__": 178,
+    "__docId__": 182,
     "kind": "method",
     "name": "clone",
     "memberof": "src/uint64.js~Uint64",
@@ -4288,7 +4382,7 @@
     }
   },
   {
-    "__docId__": 179,
+    "__docId__": 183,
     "kind": "method",
     "name": "set",
     "memberof": "src/uint64.js~Uint64",
@@ -4313,7 +4407,7 @@
     ]
   },
   {
-    "__docId__": 180,
+    "__docId__": 184,
     "kind": "method",
     "name": "concat",
     "memberof": "src/uint64.js~Uint64",
@@ -4354,7 +4448,7 @@
     }
   },
   {
-    "__docId__": 181,
+    "__docId__": 185,
     "kind": "method",
     "name": "toString",
     "memberof": "src/uint64.js~Uint64",
@@ -4373,7 +4467,7 @@
     }
   },
   {
-    "__docId__": 182,
+    "__docId__": 186,
     "kind": "file",
     "name": "src/utils.js",
     "content": "/**\n * @param {ArrayBuffer|Buffer|TypedArray} binary the binary we want to represent in hex.\n * @returns {string} a hexadecimal representation of this binary.\n */\nexports.binaryToHex = function binaryToHex(binary) {\n\tlet uintarray = null\n\tif (binary instanceof Uint8Array) {\n\t\tuintarray = binary\n\t} else {\n\t\tuintarray = new Uint8Array(toArrayBuffer(binary))\n\t}\n\treturn \"0x\" + Array.from(uintarray).map((x) => ('0' + x.toString(16)).substr(-2)).join(\"\")\n}\n\n/**\n * Tries to convert a binary value into an array buffer.\n * @param {ArrayBuffer|Buffer|TypedArray} value the value to convert.\n * @returns {ArrayBuffer}\n */\nexports.toArrayBuffer = function toArrayBuffer(value) {\n\tif (value instanceof ArrayBuffer) {\n\t\treturn value\n\t} else if (value instanceof Buffer) {\n\t\treturn value.buffer.slice(value.offset, value.offset + value.length)\n\t} else if (value instanceof ArrayBuffer === false && value.buffer && value.buffer instanceof ArrayBuffer) {\n\t\treturn value.buffer\n\t}\n\tthrow new TypeError(\"Unable to convert value to array buffer \" + value)\n}\n\n/**\n * Runs the provided function, and wraps the output or thrown error in a promise.\n * This is useful for writing code that deals with functions that may be either synchronous or\n * asynchronous.\n * @param {function} fn the function that will be evaluated to populate the promise.\n * @returns {Promise}\n */\nexports.asPromise = function asPromise(fn) {\n\ttry {\n\t\treturn Promise.resolve(fn())\n\t} catch (e) {\n\t\treturn Promise.reject(e)\n\t}\n}",
@@ -4384,7 +4478,7 @@
     "lineNumber": 1
   },
   {
-    "__docId__": 183,
+    "__docId__": 187,
     "kind": "function",
     "name": "binaryToHex",
     "memberof": "src/utils.js",
@@ -4428,7 +4522,7 @@
     }
   },
   {
-    "__docId__": 184,
+    "__docId__": 188,
     "kind": "function",
     "name": "toArrayBuffer",
     "memberof": "src/utils.js",
@@ -4472,7 +4566,7 @@
     }
   },
   {
-    "__docId__": 185,
+    "__docId__": 189,
     "kind": "function",
     "name": "asPromise",
     "memberof": "src/utils.js",
@@ -4514,7 +4608,7 @@
     }
   },
   {
-    "__docId__": 187,
+    "__docId__": 191,
     "kind": "external",
     "name": "Infinity",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Infinity",
@@ -4526,7 +4620,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 188,
+    "__docId__": 192,
     "kind": "external",
     "name": "NaN",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/NaN",
@@ -4538,7 +4632,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 189,
+    "__docId__": 193,
     "kind": "external",
     "name": "undefined",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/undefined",
@@ -4550,7 +4644,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 190,
+    "__docId__": 194,
     "kind": "external",
     "name": "null",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/null",
@@ -4562,7 +4656,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 191,
+    "__docId__": 195,
     "kind": "external",
     "name": "Object",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object",
@@ -4574,7 +4668,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 192,
+    "__docId__": 196,
     "kind": "external",
     "name": "object",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object",
@@ -4586,7 +4680,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 193,
+    "__docId__": 197,
     "kind": "external",
     "name": "Function",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Function",
@@ -4598,7 +4692,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 194,
+    "__docId__": 198,
     "kind": "external",
     "name": "function",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Function",
@@ -4610,7 +4704,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 195,
+    "__docId__": 199,
     "kind": "external",
     "name": "Boolean",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Boolean",
@@ -4622,7 +4716,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 196,
+    "__docId__": 200,
     "kind": "external",
     "name": "boolean",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Boolean",
@@ -4634,7 +4728,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 197,
+    "__docId__": 201,
     "kind": "external",
     "name": "Symbol",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Symbol",
@@ -4646,7 +4740,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 198,
+    "__docId__": 202,
     "kind": "external",
     "name": "Error",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Error",
@@ -4658,7 +4752,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 199,
+    "__docId__": 203,
     "kind": "external",
     "name": "EvalError",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/EvalError",
@@ -4670,7 +4764,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 200,
+    "__docId__": 204,
     "kind": "external",
     "name": "InternalError",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/InternalError",
@@ -4682,7 +4776,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 201,
+    "__docId__": 205,
     "kind": "external",
     "name": "RangeError",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/RangeError",
@@ -4694,7 +4788,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 202,
+    "__docId__": 206,
     "kind": "external",
     "name": "ReferenceError",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/ReferenceError",
@@ -4706,7 +4800,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 203,
+    "__docId__": 207,
     "kind": "external",
     "name": "SyntaxError",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/SyntaxError",
@@ -4718,7 +4812,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 204,
+    "__docId__": 208,
     "kind": "external",
     "name": "TypeError",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/TypeError",
@@ -4730,7 +4824,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 205,
+    "__docId__": 209,
     "kind": "external",
     "name": "URIError",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/URIError",
@@ -4742,7 +4836,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 206,
+    "__docId__": 210,
     "kind": "external",
     "name": "Number",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Number",
@@ -4754,7 +4848,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 207,
+    "__docId__": 211,
     "kind": "external",
     "name": "number",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Number",
@@ -4766,7 +4860,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 208,
+    "__docId__": 212,
     "kind": "external",
     "name": "Date",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Date",
@@ -4778,7 +4872,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 209,
+    "__docId__": 213,
     "kind": "external",
     "name": "String",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String",
@@ -4790,7 +4884,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 210,
+    "__docId__": 214,
     "kind": "external",
     "name": "string",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String",
@@ -4802,7 +4896,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 211,
+    "__docId__": 215,
     "kind": "external",
     "name": "RegExp",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/RegExp",
@@ -4814,7 +4908,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 212,
+    "__docId__": 216,
     "kind": "external",
     "name": "Array",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array",
@@ -4826,7 +4920,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 213,
+    "__docId__": 217,
     "kind": "external",
     "name": "Int8Array",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Int8Array",
@@ -4838,7 +4932,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 214,
+    "__docId__": 218,
     "kind": "external",
     "name": "Uint8Array",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Uint8Array",
@@ -4850,7 +4944,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 215,
+    "__docId__": 219,
     "kind": "external",
     "name": "Uint8ClampedArray",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Uint8ClampedArray",
@@ -4862,7 +4956,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 216,
+    "__docId__": 220,
     "kind": "external",
     "name": "Int16Array",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Int16Array",
@@ -4874,7 +4968,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 217,
+    "__docId__": 221,
     "kind": "external",
     "name": "Uint16Array",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Uint16Array",
@@ -4886,7 +4980,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 218,
+    "__docId__": 222,
     "kind": "external",
     "name": "Int32Array",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Int32Array",
@@ -4898,7 +4992,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 219,
+    "__docId__": 223,
     "kind": "external",
     "name": "Uint32Array",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Uint32Array",
@@ -4910,7 +5004,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 220,
+    "__docId__": 224,
     "kind": "external",
     "name": "Float32Array",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Float32Array",
@@ -4922,7 +5016,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 221,
+    "__docId__": 225,
     "kind": "external",
     "name": "Float64Array",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Float64Array",
@@ -4934,7 +5028,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 222,
+    "__docId__": 226,
     "kind": "external",
     "name": "Map",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map",
@@ -4946,7 +5040,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 223,
+    "__docId__": 227,
     "kind": "external",
     "name": "Set",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Set",
@@ -4958,7 +5052,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 224,
+    "__docId__": 228,
     "kind": "external",
     "name": "WeakMap",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/WeakMap",
@@ -4970,7 +5064,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 225,
+    "__docId__": 229,
     "kind": "external",
     "name": "WeakSet",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/WeakSet",
@@ -4982,7 +5076,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 226,
+    "__docId__": 230,
     "kind": "external",
     "name": "ArrayBuffer",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/ArrayBuffer",
@@ -4994,7 +5088,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 227,
+    "__docId__": 231,
     "kind": "external",
     "name": "DataView",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/DataView",
@@ -5006,7 +5100,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 228,
+    "__docId__": 232,
     "kind": "external",
     "name": "JSON",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/JSON",
@@ -5018,7 +5112,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 229,
+    "__docId__": 233,
     "kind": "external",
     "name": "Promise",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise",
@@ -5030,7 +5124,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 230,
+    "__docId__": 234,
     "kind": "external",
     "name": "Generator",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Generator",
@@ -5042,7 +5136,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 231,
+    "__docId__": 235,
     "kind": "external",
     "name": "GeneratorFunction",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/GeneratorFunction",
@@ -5054,7 +5148,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 232,
+    "__docId__": 236,
     "kind": "external",
     "name": "Reflect",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Reflect",
@@ -5066,7 +5160,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 233,
+    "__docId__": 237,
     "kind": "external",
     "name": "Proxy",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Proxy",
@@ -5079,7 +5173,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 235,
+    "__docId__": 239,
     "kind": "external",
     "name": "CanvasRenderingContext2D",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D",
@@ -5091,7 +5185,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 236,
+    "__docId__": 240,
     "kind": "external",
     "name": "DocumentFragment",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/API/DocumentFragment",
@@ -5103,7 +5197,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 237,
+    "__docId__": 241,
     "kind": "external",
     "name": "Element",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/API/Element",
@@ -5115,7 +5209,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 238,
+    "__docId__": 242,
     "kind": "external",
     "name": "Event",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/API/Event",
@@ -5127,7 +5221,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 239,
+    "__docId__": 243,
     "kind": "external",
     "name": "Node",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/API/Node",
@@ -5139,7 +5233,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 240,
+    "__docId__": 244,
     "kind": "external",
     "name": "NodeList",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/API/NodeList",
@@ -5151,7 +5245,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 241,
+    "__docId__": 245,
     "kind": "external",
     "name": "XMLHttpRequest",
     "externalLink": "https://developer.mozilla.org/en/docs/Web/API/XMLHttpRequest",
@@ -5163,7 +5257,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 242,
+    "__docId__": 246,
     "kind": "external",
     "name": "AudioContext",
     "externalLink": "https://developer.mozilla.org/en/docs/Web/API/AudioContext",

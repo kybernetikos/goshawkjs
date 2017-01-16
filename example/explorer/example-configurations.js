@@ -5,7 +5,7 @@ function stringToArrayBuffer(string) {
 // This is an unused function that you can execute from the developer console
 // if you want to see the data change.
 function populate() {
-	goshawkjs.connect("wss://localhost:9999/ws").then((connection) => {
+	goshawkjs.connect(`wss://${params.host}:${params.port}/ws`).then((connection) => {
 		connection.transact((txn) => {
 			const root = txn.roots["myRoot"]
 			const o1 = txn.create(stringToArrayBuffer("Hello"), [root])
