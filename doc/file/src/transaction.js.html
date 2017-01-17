@@ -32,13 +32,13 @@
 <nav class="navigation" data-ice="nav"><div>
   <ul>
     
-  <li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/errors.js~CapabilityDenied.html">CapabilityDenied</a></span></span></li>
+  <li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/connection.js~Connection.html">Connection</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/errors.js~CapabilityDenied.html">CapabilityDenied</a></span></span></li>
 <li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/errors.js~MutationNotAllowed.html">MutationNotAllowed</a></span></span></li>
 <li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/errors.js~Throwable.html">Throwable</a></span></span></li>
 <li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/errors.js~TransactionRejectedError.html">TransactionRejectedError</a></span></span></li>
 <li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/errors.js~TransactionRetryNeeded.html">TransactionRetryNeeded</a></span></span></li>
-<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/gos-connection.js~GosConnection.html">GosConnection</a></span></span></li>
-<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/goshawk.js~Goshawk.html">Goshawk</a></span></span></li>
+<li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/goshawkdb.js~GoshawkDb.html">GoshawkDb</a></span></span></li>
 <li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/ref.js~Ref.html">Ref</a></span></span></li>
 <li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/transaction.js~Transaction.html">Transaction</a></span></span></li>
 <li data-ice="doc"><span data-ice="kind" class="kind-class">C</span><span data-ice="name"><span><a href="class/src/uint64.js~Uint64.html">Uint64</a></span></span></li>
@@ -57,16 +57,6 @@ const Uint64 = require(&apos;./uint64&apos;)
 
 /** @private */
 const nextNewObjectId = Uint64.from(0, 0, 0, 0, 0, 0, 0, 0)
-
-/** @private
- * Gets the object id to use for the next `txn.create` and increments the counter.
- * @returns {Uint8Array}
- */
-function getNewObjectId(namespace) {
-	const objId = nextNewObjectId.concat(namespace)
-	nextNewObjectId.inc()
-	return new Uint8Array(objId)
-}
 
 /**
  * A transaction represents an attempt to make a modification to the database.
@@ -161,7 +151,7 @@ class Transaction {
 	 */
 	create(value, refs = []) {
 		value = toArrayBuffer(value)
-		const newId = getNewObjectId(this.namespace)
+		const newId = this.getNewObjectId()
 		const cacheEntry = this.cache.get(newId)
 		cacheEntry.create(value, refs)
 		return new Ref(new Uint8Array(newId), true, true)
@@ -216,6 +206,17 @@ class Transaction {
 	}
 
 	// private API
+
+	/** @private
+	 * Gets the object id to use for the next `txn.create` and increments the counter.
+	 * @returns {Uint8Array}
+	 */
+	getNewObjectId() {
+		const objId = nextNewObjectId.concat(this.namespace)
+		nextNewObjectId.inc()
+		return new Uint8Array(objId)
+	}
+
 
 	/** @private
 	 * Prepares this transaction to be run again.*/

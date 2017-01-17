@@ -6,7 +6,7 @@ module.exports = {
 		path: path.resolve(__dirname),
 		filename: 'dist/goshawkdb.browser.js',
 		libraryTarget: "umd",
-		library: "goshawkjs"
+		library: "goshawkdb"
 	},
 	externals: {
 		'ws': 'WebSocket'

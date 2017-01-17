@@ -38,7 +38,7 @@
 		let connectioninfo = document.getElementById("connectioninfo")
 		let lastGraph = new DataGraph()
 		connectioninfo.innerHTML = `Connecting to ${params.host}:${params.port}...`
-		goshawkjs.connect(`wss://${params.host}:${params.port}/ws`).then((connection) => {
+		goshawkdb.connect(`wss://${params.host}:${params.port}/ws`).then((connection) => {
 			connectioninfo.innerHTML = `Connected to ${params.host}:${params.port}...`
 
 			connection.transact((txn) => {
@@ -54,8 +54,7 @@
 				txn.retry()
 			})
 		}).catch((err) => {
-			console.error(err)
-			connectioninfo.innerHTML = `Connection to ${params.host}:${params.port} failed.`
+			connectioninfo.innerHTML = `Connection to ${params.host}:${params.port}...`
 		})
 	}
 

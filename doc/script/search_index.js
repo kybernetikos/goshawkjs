@@ -1,80 +1,80 @@
 window.esdocSearchIndex = [
   [
-    "goshawkjs/src/errors.js~capabilitydenied",
+    "goshawkdb/src/errors.js~capabilitydenied",
     "class/src/errors.js~CapabilityDenied.html",
-    "<span>CapabilityDenied</span> <span class=\"search-result-import-path\">goshawkjs/src/errors.js</span>",
+    "<span>CapabilityDenied</span> <span class=\"search-result-import-path\">goshawkdb/src/errors.js</span>",
     "class"
   ],
   [
-    "goshawkjs/src/gos-connection.js~gosconnection",
-    "class/src/gos-connection.js~GosConnection.html",
-    "<span>GosConnection</span> <span class=\"search-result-import-path\">goshawkjs/src/gos-connection.js</span>",
+    "goshawkdb/src/connection.js~connection",
+    "class/src/connection.js~Connection.html",
+    "<span>Connection</span> <span class=\"search-result-import-path\">goshawkdb/src/connection.js</span>",
     "class"
   ],
   [
-    "goshawkjs/src/goshawk.js~goshawk",
-    "class/src/goshawk.js~Goshawk.html",
-    "<span>Goshawk</span> <span class=\"search-result-import-path\">goshawkjs/src/goshawk.js</span>",
+    "goshawkdb/src/goshawkdb.js~goshawkdb",
+    "class/src/goshawkdb.js~GoshawkDb.html",
+    "<span>GoshawkDb</span> <span class=\"search-result-import-path\">goshawkdb/src/goshawkdb.js</span>",
     "class"
   ],
   [
-    "goshawkjs/src/errors.js~mutationnotallowed",
+    "goshawkdb/src/errors.js~mutationnotallowed",
     "class/src/errors.js~MutationNotAllowed.html",
-    "<span>MutationNotAllowed</span> <span class=\"search-result-import-path\">goshawkjs/src/errors.js</span>",
+    "<span>MutationNotAllowed</span> <span class=\"search-result-import-path\">goshawkdb/src/errors.js</span>",
     "class"
   ],
   [
-    "goshawkjs/src/ref.js~ref",
+    "goshawkdb/src/ref.js~ref",
     "class/src/ref.js~Ref.html",
-    "<span>Ref</span> <span class=\"search-result-import-path\">goshawkjs/src/ref.js</span>",
+    "<span>Ref</span> <span class=\"search-result-import-path\">goshawkdb/src/ref.js</span>",
     "class"
   ],
   [
-    "goshawkjs/src/errors.js~throwable",
+    "goshawkdb/src/errors.js~throwable",
     "class/src/errors.js~Throwable.html",
-    "<span>Throwable</span> <span class=\"search-result-import-path\">goshawkjs/src/errors.js</span>",
+    "<span>Throwable</span> <span class=\"search-result-import-path\">goshawkdb/src/errors.js</span>",
     "class"
   ],
   [
-    "goshawkjs/src/transaction.js~transaction",
+    "goshawkdb/src/transaction.js~transaction",
     "class/src/transaction.js~Transaction.html",
-    "<span>Transaction</span> <span class=\"search-result-import-path\">goshawkjs/src/transaction.js</span>",
+    "<span>Transaction</span> <span class=\"search-result-import-path\">goshawkdb/src/transaction.js</span>",
     "class"
   ],
   [
-    "goshawkjs/src/errors.js~transactionrejectederror",
+    "goshawkdb/src/errors.js~transactionrejectederror",
     "class/src/errors.js~TransactionRejectedError.html",
-    "<span>TransactionRejectedError</span> <span class=\"search-result-import-path\">goshawkjs/src/errors.js</span>",
+    "<span>TransactionRejectedError</span> <span class=\"search-result-import-path\">goshawkdb/src/errors.js</span>",
     "class"
   ],
   [
-    "goshawkjs/src/errors.js~transactionretryneeded",
+    "goshawkdb/src/errors.js~transactionretryneeded",
     "class/src/errors.js~TransactionRetryNeeded.html",
-    "<span>TransactionRetryNeeded</span> <span class=\"search-result-import-path\">goshawkjs/src/errors.js</span>",
+    "<span>TransactionRetryNeeded</span> <span class=\"search-result-import-path\">goshawkdb/src/errors.js</span>",
     "class"
   ],
   [
-    "goshawkjs/src/uint64.js~uint64",
+    "goshawkdb/src/uint64.js~uint64",
     "class/src/uint64.js~Uint64.html",
-    "<span>Uint64</span> <span class=\"search-result-import-path\">goshawkjs/src/uint64.js</span>",
+    "<span>Uint64</span> <span class=\"search-result-import-path\">goshawkdb/src/uint64.js</span>",
     "class"
   ],
   [
-    "goshawkjs/src/utils.js~aspromise",
+    "goshawkdb/src/utils.js~aspromise",
     "function/index.html#static-function-asPromise",
-    "<span>asPromise</span> <span class=\"search-result-import-path\">goshawkjs/src/utils.js</span>",
+    "<span>asPromise</span> <span class=\"search-result-import-path\">goshawkdb/src/utils.js</span>",
     "function"
   ],
   [
-    "goshawkjs/src/utils.js~binarytohex",
+    "goshawkdb/src/utils.js~binarytohex",
     "function/index.html#static-function-binaryToHex",
-    "<span>binaryToHex</span> <span class=\"search-result-import-path\">goshawkjs/src/utils.js</span>",
+    "<span>binaryToHex</span> <span class=\"search-result-import-path\">goshawkdb/src/utils.js</span>",
     "function"
   ],
   [
-    "goshawkjs/src/utils.js~toarraybuffer",
+    "goshawkdb/src/utils.js~toarraybuffer",
     "function/index.html#static-function-toArrayBuffer",
-    "<span>toArrayBuffer</span> <span class=\"search-result-import-path\">goshawkjs/src/utils.js</span>",
+    "<span>toArrayBuffer</span> <span class=\"search-result-import-path\">goshawkdb/src/utils.js</span>",
     "function"
   ],
   [
@@ -408,6 +408,54 @@ window.esdocSearchIndex = [
     "external"
   ],
   [
+    "src/connection.js",
+    "file/src/connection.js.html",
+    "src/connection.js",
+    "file"
+  ],
+  [
+    "src/connection.js~connection#clientinfo",
+    "class/src/connection.js~Connection.html#instance-member-clientInfo",
+    "src/connection.js~Connection#clientInfo",
+    "member"
+  ],
+  [
+    "src/connection.js~connection#close",
+    "class/src/connection.js~Connection.html#instance-method-close",
+    "src/connection.js~Connection#close",
+    "method"
+  ],
+  [
+    "src/connection.js~connection#connect",
+    "class/src/connection.js~Connection.html#instance-method-connect",
+    "src/connection.js~Connection#connect",
+    "method"
+  ],
+  [
+    "src/connection.js~connection#namespace",
+    "class/src/connection.js~Connection.html#instance-member-namespace",
+    "src/connection.js~Connection#namespace",
+    "member"
+  ],
+  [
+    "src/connection.js~connection#roots",
+    "class/src/connection.js~Connection.html#instance-member-roots",
+    "src/connection.js~Connection#roots",
+    "member"
+  ],
+  [
+    "src/connection.js~connection#serverinfo",
+    "class/src/connection.js~Connection.html#instance-member-serverInfo",
+    "src/connection.js~Connection#serverInfo",
+    "member"
+  ],
+  [
+    "src/connection.js~connection#transact",
+    "class/src/connection.js~Connection.html#instance-method-transact",
+    "src/connection.js~Connection#transact",
+    "method"
+  ],
+  [
     "src/errors.js",
     "file/src/errors.js.html",
     "src/errors.js",
@@ -432,63 +480,15 @@ window.esdocSearchIndex = [
     "member"
   ],
   [
-    "src/gos-connection.js",
-    "file/src/gos-connection.js.html",
-    "src/gos-connection.js",
+    "src/goshawkdb.js",
+    "file/src/goshawkdb.js.html",
+    "src/goshawkdb.js",
     "file"
   ],
   [
-    "src/gos-connection.js~gosconnection#clientinfo",
-    "class/src/gos-connection.js~GosConnection.html#instance-member-clientInfo",
-    "src/gos-connection.js~GosConnection#clientInfo",
-    "member"
-  ],
-  [
-    "src/gos-connection.js~gosconnection#close",
-    "class/src/gos-connection.js~GosConnection.html#instance-method-close",
-    "src/gos-connection.js~GosConnection#close",
-    "method"
-  ],
-  [
-    "src/gos-connection.js~gosconnection#connect",
-    "class/src/gos-connection.js~GosConnection.html#instance-method-connect",
-    "src/gos-connection.js~GosConnection#connect",
-    "method"
-  ],
-  [
-    "src/gos-connection.js~gosconnection#namespace",
-    "class/src/gos-connection.js~GosConnection.html#instance-member-namespace",
-    "src/gos-connection.js~GosConnection#namespace",
-    "member"
-  ],
-  [
-    "src/gos-connection.js~gosconnection#roots",
-    "class/src/gos-connection.js~GosConnection.html#instance-member-roots",
-    "src/gos-connection.js~GosConnection#roots",
-    "member"
-  ],
-  [
-    "src/gos-connection.js~gosconnection#serverinfo",
-    "class/src/gos-connection.js~GosConnection.html#instance-member-serverInfo",
-    "src/gos-connection.js~GosConnection#serverInfo",
-    "member"
-  ],
-  [
-    "src/gos-connection.js~gosconnection#transact",
-    "class/src/gos-connection.js~GosConnection.html#instance-method-transact",
-    "src/gos-connection.js~GosConnection#transact",
-    "method"
-  ],
-  [
-    "src/goshawk.js",
-    "file/src/goshawk.js.html",
-    "src/goshawk.js",
-    "file"
-  ],
-  [
-    "src/goshawk.js~goshawk.connect",
-    "class/src/goshawk.js~Goshawk.html#static-method-connect",
-    "src/goshawk.js~Goshawk.connect",
+    "src/goshawkdb.js~goshawkdb.connect",
+    "class/src/goshawkdb.js~GoshawkDb.html#static-method-connect",
+    "src/goshawkdb.js~GoshawkDb.connect",
     "method"
   ],
   [

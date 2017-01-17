@@ -1,13 +1,16 @@
 {
-  "name": "goshawkjs",
+  "name": "goshawkdb",
   "version": "0.1.0",
-  "description": "a javascript client for goshawkjs",
+  "description": "a javascript client for goshawkdb",
   "main": "./index.js",
   "scripts": {
     "test": "node --harmony-async-await node_modules/.bin/ava --serial",
     "doc": "esdoc -c ./esdoc.json",
     "build": "webpack && npm run doc",
     "start": "webpack-dev-server"
+  },
+  "engines" : {
+    "node" : ">= 7.3.0"
   },
   "repository": {
     "type": "git",
@@ -37,5 +40,10 @@
     "esdoc-node": "^1.0.0",
     "webpack": "^2.2.0-rc.3",
     "webpack-dev-server": "^1.16.2"
+  },
+  "directories": {
+    "doc": "doc",
+    "example": "example",
+    "test": "test"
   }
 }

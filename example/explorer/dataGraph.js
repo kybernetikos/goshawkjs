@@ -1,6 +1,6 @@
 class Util {
 	static binaryToHex(binary) {
-		return goshawkjs.binaryToHex(binary)
+		return goshawkdb.binaryToHex(binary)
 	}
 
 	static arrayBufferEqual(a1, a2) {

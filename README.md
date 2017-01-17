@@ -1,6 +1,6 @@
-# goshawkjs
+# goshawkdb
 
-GoshawkJS is a javascript client for goshawkdb that works in node or the browser.
+GoshawkDb is a javascript client for goshawkdb that works in node or the browser.
 
 Dev only links:
 * [Doc](https://rawgit.com/kybernetikos/goshawkjs/master/doc/index.html)
@@ -36,10 +36,10 @@ node example/node-example.js
 
 ### In Node
 
-Import goshawkjs
+Import the goshawkdb client
 
 ```bash
-npm install --save kybernetikos/goshawkjs
+npm install --save goshawkdb
 ```
 
 When running in node, I suggest the following in your code:
@@ -55,10 +55,10 @@ if (process.stdout.isTTY) {
 }
 ```
 
-Get a goshawkjs reference and open a connection:
+Get a goshawkdb reference and open a connection:
 
 ```js
-const goshawkjs = require('goshawkjs')
+const goshawkdb = require('goshawkdb')
 
 // These will need to be for a user that your goshawkdb configuration allows.
 // Check the .pem file you created for that user.
@@ -83,9 +83,9 @@ JFKaKVqAWufHF0RQXEQdUX90yZfiWK/XgQ==
 -----END EC PRIVATE KEY-----`
 }
 
-goshawkjs.connect("wss://localhost:9999/ws", connectionOptions).then((connection) => {
+goshawkdb.connect("wss://localhost:9999/ws", connectionOptions).then((connection) => {
 
-    // this is where your goshawkjs code goes
+    // this is where your goshawkdb code goes
 
 })
 ```
@@ -110,9 +110,9 @@ It is regenerated on an `npm build`.
 Now include your code, e.g.
 
 ```js
-goshawkjs.connect("wss://localhost:9999/ws").then((connection) => {
+goshawksb.connect("wss://localhost:9999/ws").then((connection) => {
   
-    // this is where your goshawkjs code goes
+    // this is where your goshawkdb code goes
 
 })
 ```
@@ -134,7 +134,7 @@ const promiseOfSomething = connection.transact((txn) => {
 ### Transaction API
 
 **NOTE**: code submitted to `.transact` may be run by the system multiple times. Avoid making side effecting changes
-from inside a transaction.  The goshawkjs library uses exceptions to stop execution when there is a cache miss and it
+from inside a transaction.  The goshawksb library uses exceptions to stop execution when there is a cache miss and it
 needs to request values from the server.  If you use try catch around transaction methods and you want this behaviour
 to work, you will need to rethrow any exceptions with a name of `TransactionRetryNeeded` that you inadvertantly catch.
 

@@ -2,7 +2,6 @@ const {binaryToHex, toArrayBuffer} = require('./utils')
 const {TransactionRetryNeeded, MutationNotAllowed} = require('./errors')
 const Uint64 = require('./uint64')
 const Ref = require('./ref')
-const Goshawk = require('./goshawk')
 
 function checkRefs(refs) {
 	for (let i = 0; i < refs.length; ++i) {

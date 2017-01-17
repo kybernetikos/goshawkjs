@@ -1,5 +1,5 @@
 const connectionOptions = require('./system-test-configuration')
-const goshawkjs = require('../..')
+const goshawkdb = require('../..')
 
 function firstRoot(txn) {
 	for (let rootName in txn.roots) {
@@ -11,7 +11,7 @@ function firstRoot(txn) {
 function transactionMustFail(error, test) {
 	return (t) => {
 		return new Promise((resolve, reject) => {
-			goshawkjs
+			goshawkdb
 				.connect(`wss://${connectionOptions.host}:${connectionOptions.wssPort}/ws`, connectionOptions)
 				.then((conn) => {
 					return conn.transact((txn) => {
@@ -38,7 +38,7 @@ function all(...tests) {
 function transactionTest(test) {
 	return (t) => {
 		return new Promise((resolve, reject) => {
-			goshawkjs
+			goshawkdb
 				.connect(`wss://${connectionOptions.host}:${connectionOptions.wssPort}/ws`, connectionOptions)
 				.then((conn) => {
 					return conn.transact((txn) => {
@@ -52,7 +52,7 @@ function transactionTest(test) {
 function connectionTest(test) {
 	return (t) => {
 		return new Promise((resolve, reject) => {
-			goshawkjs
+			goshawkdb
 				.connect(`wss://${connectionOptions.host}:${connectionOptions.wssPort}/ws`, connectionOptions)
 				.then((conn) => {
 					try {
@@ -83,7 +83,7 @@ function setupThenTransactionTest(setup, test) {
 	return (t) => {
 		return new Promise((resolve, reject) => {
 			let connection = null
-			goshawkjs
+			goshawkdb
 				.connect(`wss://${connectionOptions.host}:${connectionOptions.wssPort}/ws`, connectionOptions)
 				.then((conn) => {
 					connection = conn

@@ -11,9 +11,9 @@ let nextConnectionNumber = 0
 /**
  * GosConnections represent the connection to the GoshawkDB.
  *
- * They should be acquired through the static {@link Goshawk.connect} function.
+ * They should be acquired through the static {@link GoshawkDb.connect} function.
  */
-class GosConnection {
+class Connection {
 	/** @private */
 	constructor(url) {
 		/** @private used in logging to distinguish different connections */
@@ -70,7 +70,7 @@ class GosConnection {
 	 * Connects to the server.  If running in node, you will need to provide connectionOptions that include the client
 	 * certificate and key.
 	 *
-	 * @return {Promise<GosConnection, Error>}
+	 * @return {Promise<Connection, Error>}
 	 */
 	connect(connectionOptions) {
 		const serverHelloHandler = (message) => {
@@ -91,7 +91,7 @@ class GosConnection {
 			// now we're properly connected
 			this.messageHandler = null
 			this.cache = new ObjectCache(this.namespace)
-			console.info(`Connection ${this.connectionId}: Connected to goshawk`, this.serverInfo, this.clientInfo, this.namespace, this.roots)
+			console.info(`Connection ${this.connectionId}: Connected to goshawkdb.`, this.serverInfo, this.clientInfo, this.namespace, this.roots)
 			this._onConnectionNegotiated(this)
 		}
 
@@ -254,4 +254,4 @@ class GosConnection {
 	}
 }
 
-module.exports = GosConnection
+module.exports = Connection

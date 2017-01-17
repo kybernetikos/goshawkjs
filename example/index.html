@@ -2,12 +2,12 @@
 <html>
 <head>
 	<meta charset="utf-8" />
-	<title>GoshawkJS Example Test Page</title>
+	<title>GoshawkDb Example Test Page</title>
 	<script type="text/javascript" src="../dist/goshawkdb.browser.js"></script>
 </head>
 <body>
 <p>
-	GoshawkJS Example Test Page.  Open the developer console for more information.
+	GoshawkDb Example Test Page.  Open the developer console for more information.
 </p>
 
 <p>
@@ -66,19 +66,19 @@
 		const noWriteyRef = rootRefs[1]
 		const noAnythingRef = rootRefs[2]
 
-		ensureThrows(() => txn.read(noReadyRef), goshawkjs.errors.CapabilityDenied)
+		ensureThrows(() => txn.read(noReadyRef), goshawkdb.errors.CapabilityDenied)
 
 		const {value:newReadValue, refs: newRefs} = txn.read(noWriteyRef)
 		assert(arrayBufferToString(newReadValue) === "Hello World")
 		console.log("New refs should be empty", newRefs)
-		ensureThrows(() => txn.write(noWriteyRef, stringToArrayBuffer("this shouldn't work"), []), goshawkjs.errors.CapabilityDenied)
+		ensureThrows(() => txn.write(noWriteyRef, stringToArrayBuffer("this shouldn't work"), []), goshawkdb.errors.CapabilityDenied)
 
-		ensureThrows(() => txn.read(noAnythingRef), goshawkjs.errors.CapabilityDenied)
-		ensureThrows(() => txn.write(noAnythingRef, stringToArrayBuffer("this shouldn't work"), []), goshawkjs.errors.CapabilityDenied)
+		ensureThrows(() => txn.read(noAnythingRef), goshawkdb.errors.CapabilityDenied)
+		ensureThrows(() => txn.write(noAnythingRef, stringToArrayBuffer("this shouldn't work"), []), goshawkdb.errors.CapabilityDenied)
 	}
 
 	function runTest() {
-		goshawkjs.connect("wss://localhost:9999/ws").then((connection) => {
+		goshawkdb.connect("wss://localhost:9999/ws").then((connection) => {
 			connection.transact(setup).then( () => {
 				return connection.transact(test)
 			}).then((x) => console.log('Transaction Committed', x), (e) => console.log('Transaction Failed', e))

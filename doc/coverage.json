@@ -10,12 +10,12 @@
         2
       ]
     },
-    "src/gos-connection.js": {
+    "src/connection.js": {
       "expectCount": 8,
       "actualCount": 8,
       "undocumentLines": []
     },
-    "src/goshawk.js": {
+    "src/goshawkdb.js": {
       "expectCount": 2,
       "actualCount": 2,
       "undocumentLines": []

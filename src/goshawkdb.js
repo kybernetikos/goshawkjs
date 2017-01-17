@@ -1,4 +1,4 @@
-const GosConnection = require('./gos-connection')
+const GosConnection = require('./connection')
 
 // Ensure that all our calls to console.debug don't cause errors.
 if (!global.console.debug) {
@@ -8,7 +8,7 @@ if (!global.console.debug) {
 /**
  * Goshawkdb client.
  */
-module.exports = class Goshawk {
+module.exports = class GoshawkDb {
 	/**
 	 * Connects to the websocket port of a goshawkdb server.
 	 * See the [goshawkdb documentation](https://goshawkdb.io/documentation.html) for more information.

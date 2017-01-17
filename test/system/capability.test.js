@@ -1,5 +1,5 @@
 const test = require('ava')
-const goshawkjs = require('../..')
+const goshawkdb = require('../..')
 const {setupThenTransactionTest, firstRoot} = require('../helpers/utils')
 
 test("Capabilities are enforced.",
@@ -16,15 +16,15 @@ test("Capabilities are enforced.",
 			const noWriteyRef = rootRefs[1]
 			const noAnythingRef = rootRefs[2]
 
-			t.throws(() => txn.read(noReadyRef), goshawkjs.errors.CapabilityDenied)
+			t.throws(() => txn.read(noReadyRef), goshawkdb.errors.CapabilityDenied)
 
 			const {value:newReadValue, refs: newRefs} = txn.read(noWriteyRef)
 			t.true(Buffer.from(newReadValue).toString() === "Hello World")
 			t.deepEqual(newRefs, [])
-			t.throws(() => txn.write(noWriteyRef, Buffer.from("this shouldn't work"), []), goshawkjs.errors.CapabilityDenied)
+			t.throws(() => txn.write(noWriteyRef, Buffer.from("this shouldn't work"), []), goshawkdb.errors.CapabilityDenied)
 
-			t.throws(() => txn.read(noAnythingRef), goshawkjs.errors.CapabilityDenied)
-			t.throws(() => txn.write(noAnythingRef, Buffer.from("this shouldn't work"), []), goshawkjs.errors.CapabilityDenied)
+			t.throws(() => txn.read(noAnythingRef), goshawkdb.errors.CapabilityDenied)
+			t.throws(() => txn.write(noAnythingRef, Buffer.from("this shouldn't work"), []), goshawkdb.errors.CapabilityDenied)
 		}
 	)
 )
