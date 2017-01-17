@@ -13,7 +13,7 @@ module.exports = class GoshawkDb {
 	 * Connects to the websocket port of a goshawkdb server.
 	 * See the [goshawkdb documentation](https://goshawkdb.io/documentation.html) for more information.
 	 *
-	 * @param {string} url the url of the websocket endpoint. e.g. wss://localhost:9999/ws
+	 * @param {string} url the url of the websocket endpoint. e.g. wss://localhost:7895/ws
 	 * @param {*} connectionOptions in node.js, the connection options are used to make the connection.
 	 * 				They are for the WS module and are defined [here](https://github.com/websockets/ws/blob/master/doc/ws.md).
 	 * 				The options should include `key`, `cert` and if you don't want it to check

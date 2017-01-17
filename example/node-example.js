@@ -1,5 +1,5 @@
 /*
- * This example connects to a goshawk wssPort running on localhost:9999 and reads the value of the 'myRoot' root.
+ * This example connects to a goshawk wssPort running on localhost:7895 and reads the value of the 'myRoot' root.
  * Then it overwrites the value on the 'myRoot' root to 'Boo!'.
  */
 const goshawkdb = require('..')
@@ -28,7 +28,7 @@ JFKaKVqAWufHF0RQXEQdUX90yZfiWK/XgQ==
 -----END EC PRIVATE KEY-----`
 }
 
-goshawkdb.connect("wss://localhost:9999/ws", connectionOptions).then((connection) => {
+goshawkdb.connect("wss://localhost:7895/ws", connectionOptions).then((connection) => {
 	return connection.transact((txn) => {
 		const myRootRef = txn.roots['myRoot']
 		const root = txn.read(myRootRef)

@@ -29,7 +29,7 @@ const pemFile = loadPem(clientKeyPath)
 
 module.exports = {
 	host: firstHost,
-	wssPort: 9999,
+	wssPort: 7895,
 	rejectUnauthorized: false,
 	cert: `-----BEGIN CERTIFICATE-----\n${pemFile["CERTIFICATE"]}\n-----END CERTIFICATE-----`,
 	key: `-----BEGIN EC PRIVATE KEY-----\n${pemFile["EC PRIVATE KEY"]}\n-----END EC PRIVATE KEY-----`

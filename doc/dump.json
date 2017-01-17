@@ -1056,7 +1056,7 @@
     "__docId__": 50,
     "kind": "file",
     "name": "src/goshawkdb.js",
-    "content": "const GosConnection = require('./connection')\n\n// Ensure that all our calls to console.debug don't cause errors.\nif (!global.console.debug) {\n\tglobal.console.debug = () => {}\n}\n\n/**\n * Goshawkdb client.\n */\nmodule.exports = class GoshawkDb {\n\t/**\n\t * Connects to the websocket port of a goshawkdb server.\n\t * See the [goshawkdb documentation](https://goshawkdb.io/documentation.html) for more information.\n\t *\n\t * @param {string} url the url of the websocket endpoint. e.g. wss://localhost:9999/ws\n\t * @param {*} connectionOptions in node.js, the connection options are used to make the connection.\n\t * \t\t\t\tThey are for the WS module and are defined [here](https://github.com/websockets/ws/blob/master/doc/ws.md).\n\t * \t\t\t\tThe options should include `key`, `cert` and if you don't want it to check\n\t * \t\t\t\tthe server certificates, `{rejectUnauthorized: false}`.\n\t * @return {Promise<GosConnection, Error>} A promise that resolves with a connection or rejects with an error.\n\t */\n\tstatic connect(url, connectionOptions) {\n\t\treturn new GosConnection(url).connect(connectionOptions)\n\t}\n}\n",
+    "content": "const GosConnection = require('./connection')\n\n// Ensure that all our calls to console.debug don't cause errors.\nif (!global.console.debug) {\n\tglobal.console.debug = () => {}\n}\n\n/**\n * Goshawkdb client.\n */\nmodule.exports = class GoshawkDb {\n\t/**\n\t * Connects to the websocket port of a goshawkdb server.\n\t * See the [goshawkdb documentation](https://goshawkdb.io/documentation.html) for more information.\n\t *\n\t * @param {string} url the url of the websocket endpoint. e.g. wss://localhost:7895/ws\n\t * @param {*} connectionOptions in node.js, the connection options are used to make the connection.\n\t * \t\t\t\tThey are for the WS module and are defined [here](https://github.com/websockets/ws/blob/master/doc/ws.md).\n\t * \t\t\t\tThe options should include `key`, `cert` and if you don't want it to check\n\t * \t\t\t\tthe server certificates, `{rejectUnauthorized: false}`.\n\t * @return {Promise<GosConnection, Error>} A promise that resolves with a connection or rejects with an error.\n\t */\n\tstatic connect(url, connectionOptions) {\n\t\treturn new GosConnection(url).connect(connectionOptions)\n\t}\n}\n",
     "static": true,
     "longname": "src/goshawkdb.js",
     "access": null,
@@ -1125,7 +1125,7 @@
         "spread": false,
         "optional": false,
         "name": "url",
-        "description": "the url of the websocket endpoint. e.g. wss://localhost:9999/ws"
+        "description": "the url of the websocket endpoint. e.g. wss://localhost:7895/ws"
       },
       {
         "nullable": null,

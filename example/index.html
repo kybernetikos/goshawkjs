@@ -78,7 +78,7 @@
 	}
 
 	function runTest() {
-		goshawkdb.connect("wss://localhost:9999/ws").then((connection) => {
+		goshawkdb.connect("wss://localhost:7895/ws").then((connection) => {
 			connection.transact(setup).then( () => {
 				return connection.transact(test)
 			}).then((x) => console.log('Transaction Committed', x), (e) => console.log('Transaction Failed', e))

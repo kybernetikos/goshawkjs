@@ -17,7 +17,7 @@
 
 	const params = window.location.search.substring(1).split('&').map((x) => x.split('=')).reduce((curr, [key, value  = true]) => {curr[key] = value; return curr}, {
 		host: "localhost",
-		port: 9999
+		port: 7895
 	})
 
 	let selectedNodeId = null
@@ -39,7 +39,7 @@
 		let lastGraph = new DataGraph()
 		connectioninfo.innerHTML = `Connecting to ${params.host}:${params.port}...`
 		goshawkdb.connect(`wss://${params.host}:${params.port}/ws`).then((connection) => {
-			connectioninfo.innerHTML = `Connected to ${params.host}:${params.port}...`
+			connectioninfo.innerHTML = `Connected to ${params.host}:${params.port}.`
 
 			connection.transact((txn) => {
 				const graph = new DataGraph()
@@ -54,7 +54,7 @@
 				txn.retry()
 			})
 		}).catch((err) => {
-			connectioninfo.innerHTML = `Connection to ${params.host}:${params.port}...`
+			connectioninfo.innerHTML = `Connection to ${params.host}:${params.port} failed. Try visiting <a href="https://${params.host}:${params.port}/">http://${params.host}:${params.port}/</a> to check your server is up and your certificates are working.`
 		})
 	}
 
