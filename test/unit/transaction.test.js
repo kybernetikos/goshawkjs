@@ -1,8 +1,7 @@
 const test = require('ava')
 const ObjectCache = require('../../src/objectcache')
 const Ref = require('../../src/ref')
-const {TransactionRetryNeeded, MutationNotAllowed} = require("../../src/errors")
-const {asPromise} = require('../../src/utils')
+const {TransactionRetryNeeded} = require("../../src/errors")
 const Uint64 = require('../../src/uint64')
 const Transaction = require('../../src/transaction')
 
@@ -16,11 +15,13 @@ const id0 = new Uint8Array(Uint64.from(0, 0, 0, 0, 0, 0, 0, 0).concat(oldNamespa
 const id1 = new Uint8Array(Uint64.from(0, 0, 0, 0, 0, 0, 0, 1).concat(oldNamespace))
 const id2 = new Uint8Array(Uint64.from(0, 0, 0, 0, 0, 0, 0, 2).concat(oldNamespace))
 const id3 = new Uint8Array(Uint64.from(0, 0, 0, 0, 0, 0, 0, 3).concat(oldNamespace))
+const id4 = new Uint8Array(Uint64.from(0, 0, 0, 0, 0, 0, 0, 4).concat(oldNamespace))
 
 const ref0 = new Ref(id0, true, true)
 const ref1 = new Ref(id1, true, true)
 const ref2 = new Ref(id2, true, true)
 const ref3 = new Ref(id3, true, true)
+const ref4 = new Ref(id4, true, true)
 
 const roots = {"root": ref0}
 
@@ -28,12 +29,41 @@ const nullV = new Uint8Array(Uint64.from(0, 0, 0, 0, 0, 0, 0, 0).concat(namespac
 const v0 = new Uint8Array(Uint64.from(1, 0, 0, 0, 0, 0, 0, 0).concat(oldNamespace))
 const v1 = new Uint8Array(Uint64.from(2, 0, 0, 0, 0, 0, 0, 0).concat(oldNamespace))
 
+test("Transaction only sends cache misses if there is a cache miss", (t) => {
+	const topLevelCache = new ObjectCache()
+	topLevelCache.get(id1).update(v0, new ArrayBuffer(0), [])
+
+	const message = testRunTransaction(topLevelCache, (txn) => {
+		txn.create(new ArrayBuffer(3), [])
+		txn.read(ref1)
+		txn.write(ref2, new ArrayBuffer(4), [])
+		txn.read(ref2)
+		try {
+			txn.read(ref3)
+		} catch (e) {}
+		try {
+			txn.read(ref4)
+		} catch (e) {}
+	})
+
+	t.deepEqual(message.ClientTxnSubmission.Actions, [
+		{
+			VarId: id3.buffer,
+			Read: { Version: nullV.buffer }
+		},
+		{
+			VarId: id4.buffer,
+			Read: { Version: nullV.buffer }
+		}
+	])
+})
+
 test("Transaction only sends reads for retries", (t) => {
 	const topLevelCache = new ObjectCache()
 	topLevelCache.get(id1).update(v0, new ArrayBuffer(0), [])
 	topLevelCache.get(id3).update(v1, new ArrayBuffer(0), [])
 
-	function fn(txn) {
+	const message = testRunTransaction(topLevelCache, (txn) => {
 		txn.create(new ArrayBuffer(3), [])
 		txn.read(ref1)
 		txn.write(ref2, new ArrayBuffer(4), [])
@@ -41,11 +71,7 @@ test("Transaction only sends reads for retries", (t) => {
 		txn.read(ref3)
 
 		txn.retry()
-	}
-
-	const message = testRunTransaction(fn, topLevelCache)
-
-	console.log(message.ClientTxnSubmission.Actions[0])
+	})
 
 	t.deepEqual(message.ClientTxnSubmission.Actions, [
 		{
@@ -59,7 +85,7 @@ test("Transaction only sends reads for retries", (t) => {
 	])
 })
 
-function testRunTransaction(fn, topLevelCache) {
+function testRunTransaction(topLevelCache, fn) {
 	const txn = new Transaction(fn, {onSuccess: nullFn, onFail: nullFn}, roots, namespace, topLevelCache)
 
 	try {
