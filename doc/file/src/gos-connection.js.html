@@ -109,8 +109,6 @@ class GosConnection {
 		// numbers as javascript doesn&apos;t support 64 integers.  The only actual operation we need is &apos;increment&apos;.
 		/** @private */
 		this.nextTransactionId = Uint64.from(0, 0, 0, 0, 0, 0, 0, 0)
-		/** @private */
-		this.nextNewObjectId = Uint64.from(0, 0, 0, 0, 0, 0, 0, 0)
 
 		/** @private the queue of transactions.*/
 		this.transactions = []
@@ -189,8 +187,8 @@ class GosConnection {
 		}
 
 		return new Promise((resolve, reject) =&gt; {
-			this.transactions.push(new Transaction(this, fn, resolve, reject, this.cache, this.namespace))
-			this.scheduleNextTransaction()
+			this.transactions.push(new Transaction(fn, {onSuccess: resolve, onFail: reject}, this.roots, this.namespace, this.cache))
+			this.scheduleNextTransaction(false)
 		})
 	}
 
@@ -202,16 +200,6 @@ class GosConnection {
 	}
 
 	// private api
-
-	/** @private
-	 * Gets the object id to use for the next `txn.create` and increments the counter.
-	 * @returns {Uint8Array}
-	 */
-	getNewObjectId() {
-		const objId = this.nextNewObjectId.concat(this.namespace)
-		this.nextNewObjectId.inc()
-		return new Uint8Array(objId)
-	}
 
 	/** @private
 	 * Actually runs the next queued transaction.

@@ -174,7 +174,7 @@
     "__docId__": 9,
     "kind": "file",
     "name": "src/gos-connection.js",
-    "content": "const MsgpackConnection = require('./msgpack-connection')\nconst Uint64 = require('./uint64')\nconst Transaction = require('./transaction')\nconst Ref = require('./ref')\nconst {TransactionRetryNeeded, TransactionRejectedError} = require('./errors')\nconst ObjectCache = require('./objectcache')\nconst {binaryToHex, asPromise} = require('./utils')\n\nlet nextConnectionNumber = 0\n\n/**\n * GosConnections represent the connection to the GoshawkDB.\n *\n * They should be acquired through the static {@link Goshawk.connect} function.\n */\nclass GosConnection {\n\t/** @private */\n\tconstructor(url) {\n\t\t/** @private used in logging to distinguish different connections */\n\t\tthis.connectionId = (nextConnectionNumber++)\n\t\t/** @private */\n\t\tthis.link = new MsgpackConnection(url, (\"000\" + this.connectionId).substr(-3))\n\n\t\t/**\n\t\t * The product and version information we sent to the server during the initial connection handshake.\n\t\t * @type {{Product: string, Version: string}}\n\t\t */\n\t\tthis.clientInfo = {Product: \"GoshawkDB\", Version: \"dev\"}\n\n\t\t/**\n\t\t * The product and version information we receive from the server during the initial handshake,\n\t\t * or null if it hasn't occurred yet.\n\t\t * @type {?{Product: string, Version: string}}\n\t\t */\n\t\tthis.serverInfo = null\n\n\t\t/**\n\t\t * The namespace that the server assigns to this client.\n\t\t * @type {?ArrayBuffer}\n\t\t */\n\t\tthis.namespace = null\n\n\t\t/**\n\t\t * The roots that this client has access to.\n\t\t * Provided by the server during handshake.\n\t\t * @type {{string: Ref}}\n\t\t */\n\t\tthis.roots = {}\n\n\t\t/** @private the function to deal with incoming messages */\n\t\tthis.messageHandler = null\n\t\t/** @private the top level cache that stores all the values and refs for objects the client knows about. */\n\t\tthis.cache = null\n\n\t\t// we control the first 8 bytes of transaction ids and new object ids (used during creation).\n\t\t// the namespace is appended to them when actually sent to the server.  We can't use normal js\n\t\t// numbers as javascript doesn't support 64 integers.  The only actual operation we need is 'increment'.\n\t\t/** @private */\n\t\tthis.nextTransactionId = Uint64.from(0, 0, 0, 0, 0, 0, 0, 0)\n\t\t/** @private */\n\t\tthis.nextNewObjectId = Uint64.from(0, 0, 0, 0, 0, 0, 0, 0)\n\n\t\t/** @private the queue of transactions.*/\n\t\tthis.transactions = []\n\t\t/** @private the transaction currently being processed.*/\n\t\tthis.currentTransaction = null\n\t\t/** @private the timeout handle or null if no timeout to process a transaction is waiting*/\n\t\tthis.scheduledCallback = null\n\t}\n\n\t/**\n\t * Connects to the server.  If running in node, you will need to provide connectionOptions that include the client\n\t * certificate and key.\n\t *\n\t * @return {Promise<GosConnection, Error>}\n\t */\n\tconnect(connectionOptions) {\n\t\tconst serverHelloHandler = (message) => {\n\t\t\t// TODO? : a check could go here to ensure that the server version matches our version (from this.clientInfo.Version).\n\t\t\tthis.serverInfo = message\n\t\t\tthis.messageHandler = rootsHandler\n\t\t}\n\n\t\tconst rootsHandler = (message) => {\n\t\t\t// populate the roots\n\t\t\tthis.roots = {}\n\t\t\tfor (const root of message.Roots) {\n\t\t\t\tthis.roots[root.Name] = Ref.fromMessage(root)\n\t\t\t}\n\t\t\t// set the namespace\n\t\t\tthis.namespace = message.Namespace\n\n\t\t\t// now we're properly connected\n\t\t\tthis.messageHandler = null\n\t\t\tthis.cache = new ObjectCache(this.namespace)\n\t\t\tconsole.info(`Connection ${this.connectionId}: Connected to goshawk`, this.serverInfo, this.clientInfo, this.namespace, this.roots)\n\t\t\tthis._onConnectionNegotiated(this)\n\t\t}\n\n\t\t// This promise should resolve with a working, setup connection if the connection makes its way to a fully\n\t\t// negotiated connection: i.e. it connects, it swaps info, it loads the roots and the namespace and initialises the\n\t\t// relevant state.\n\t\t// If anything happens to disrupt this process before it completes, this promise will reject.\n\t\treturn new Promise((resolve, reject) => {\n\t\t\tthis._onConnectionNegotiated = resolve\n\t\t\tthis.messageHandler = serverHelloHandler\n\t\t\tthis.link.connect(\n\t\t\t\t// on message\n\t\t\t\t(data) => {\n\t\t\t\t\tif (this.messageHandler) {\n\t\t\t\t\t\tthis.messageHandler(data)\n\t\t\t\t\t} else {\n\t\t\t\t\t\tconsole.warn(`Connection ${this.connectionId}: No handler found for message`, data)\n\t\t\t\t\t}\n\t\t\t\t},\n\t\t\t\t// on end - if the connection stops for any reason (error, or deliberate) before it resolves then it rejects.\n\t\t\t\t(e) => reject(e),\n\t\t\t\t// on open we start the handshake by sending the client info.\n\t\t\t\t() => this.link.send(this.clientInfo),\n\t\t\t\tconnectionOptions\n\t\t\t)\n\t\t})\n\t}\n\n\t/**\n\t * Queues a transaction for running, then ensures that transaction processing is happening.\n\t * The returned promise resolves with the value returned by the fn once the transaction has committed.  The fn may be\n\t * run multiple times and so should avoid side effects.\n\t * fn may be an asynchronous or a synchronous function.\n\t *\n\t * @param {function(txn: Transaction): {*|Promise<*, Error>}}} fn the transaction function.  This function may be run multiple times and should rethrow any TransactionRetryNeeded exceptions.\n\t * @returns {Promise<*, Error>} a promise that resolves to the result of the transaction function once the transaction submits or an error if it cannot.\n \t */\n\ttransact(fn) {\n\t\tif (fn instanceof Function === false) {\n\t\t\tthrow new TypeError(`Connection ${this.connectionId}: Transaction argument must be a function, was ${String(fn)}`)\n\t\t}\n\n\t\treturn new Promise((resolve, reject) => {\n\t\t\tthis.transactions.push(new Transaction(this, fn, resolve, reject, this.cache, this.namespace))\n\t\t\tthis.scheduleNextTransaction()\n\t\t})\n\t}\n\n\t/**\n\t * Closes the underlying link.\n\t */\n\tclose() {\n\t\tthis.link.close()\n\t}\n\n\t// private api\n\n\t/** @private\n\t * Gets the object id to use for the next `txn.create` and increments the counter.\n\t * @returns {Uint8Array}\n\t */\n\tgetNewObjectId() {\n\t\tconst objId = this.nextNewObjectId.concat(this.namespace)\n\t\tthis.nextNewObjectId.inc()\n\t\treturn new Uint8Array(objId)\n\t}\n\n\t/** @private\n\t * Actually runs the next queued transaction.\n\t */\n\texecuteNextTransaction() {\n\t\tif (this.currentTransaction != null) {\n\t\t\t// we're currently processing a transaction, exit without doing anything.\n\t\t\treturn\n\t\t}\n\n\t\tconst currentTransaction = this.currentTransaction = this.transactions.shift()\n\t\tconst txnIdWithNamespace = this.nextTransactionId.concat(this.namespace)\n\n\t\tconst succeed = (finalId, transactionResult) => {\n\t\t\tif (finalId) {\n\t\t\t\tcurrentTransaction.promoteCache(finalId)\n\t\t\t}\n\t\t\tcurrentTransaction.onSuccess(transactionResult)\n\t\t\tthis.scheduleNextTransaction(true)\n\t\t}\n\t\tconst retry = () => {\n\t\t\tcurrentTransaction.reset()\n\t\t\tthis.transactions.unshift(currentTransaction)\n\t\t\tthis.scheduleNextTransaction(true)\n\t\t}\n\t\tconst fail = (err) => {\n\t\t\tcurrentTransaction.onFail(err)\n\t\t\tthis.scheduleNextTransaction(true)\n\t\t}\n\t\tconst sendTransaction = (result) => {\n\t\t\tconst transactionMessage = currentTransaction.toMessage(txnIdWithNamespace)\n\t\t\tif (transactionMessage.ClientTxnSubmission.Actions.length > 0) {\n\t\t\t\tthis.link.request(transactionMessage)\n\t\t\t\t\t.then((response) => {\n\t\t\t\t\t\tthis.updateFromTransactionResponse(response)\n\t\t\t\t\t\tconst outcome = response.ClientTxnOutcome\n\t\t\t\t\t\tif (outcome.Commit) {\n\t\t\t\t\t\t\tsucceed(outcome.FinalId, result)\n\t\t\t\t\t\t} else if (outcome.Error != \"\") {\n\t\t\t\t\t\t\tfail(new TransactionRejectedError(outcome.Error))\n\t\t\t\t\t\t} else if (outcome.Abort) {\n\t\t\t\t\t\t\tretry()\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tfail(\"Unknown response message \" + JSON.stringify(outcome))\n\t\t\t\t\t\t}\n\t\t\t\t\t}).catch(fail)\n\t\t\t} else {\n\t\t\t\tsucceed(undefined, result)\n\t\t\t}\n\t\t}\n\n\t\t// we use asPromise, since the result of running fn might be a Promise.\n\t\tasPromise(() => {\n\t\t\treturn currentTransaction.fn(currentTransaction)\n\t\t}).catch( (e) => {\n\t\t\tif (e instanceof TransactionRetryNeeded === false) {\n\t\t\t\tthrow e\n\t\t\t}\n\t\t}).then(sendTransaction, fail)\n\t}\n\n\t/** @private\n\t * Updates the top level connection cache and counters based on a response from the server.\n\t * @param response the msgpack response.\n\t */\n\tupdateFromTransactionResponse(response) {\n\t\t// Responses contain a final transaction id.  We take the first 8 bytes and increment it.\n\t\tthis.nextTransactionId = Uint64.fromBinary(response.ClientTxnOutcome.FinalId).inc()\n\t\t// If we received an Abort message, then we may also have received some cache update instructions.\n\t\tif (response.ClientTxnOutcome.Abort) {\n\t\t\tfor (let update of response.ClientTxnOutcome.Abort) {\n\t\t\t\tconst otherTxnId = update.Version.buffer\n\t\t\t\tfor (let action of update.Actions) {\n\t\t\t\t\tconst id = action.VarId\n\t\t\t\t\tif (action.Delete) {\n\t\t\t\t\t\tconsole.debug(`Connection ${this.connectionId}: Removing ${binaryToHex(id)} from cache.`)\n\t\t\t\t\t\tthis.cache.remove(id)\n\t\t\t\t\t} else {\n\t\t\t\t\t\tconst writeData = action.Write || action.Create\n\t\t\t\t\t\tif (writeData) {\n\t\t\t\t\t\t\tthis.cache.get(id).update(otherTxnId, writeData.Value.buffer, writeData.References.map(Ref.fromMessage))\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\t}\n\n\t/** @private\n\t * If there is no transaction currently processing and we haven't scheduled one\n\t * and there is a transaction waiting to be processed, then schedule it.\n\t * @param {boolean} clearCurrentTransaction if true, this will first clear the current transaction.\n\t */\n\tscheduleNextTransaction(clearCurrentTransaction) {\n\t\tif (clearCurrentTransaction) {\n\t\t\tthis.currentTransaction = null\n\t\t}\n\t\tif (this.scheduledCallback == null && this.currentTransaction == null && this.transactions.length > 0) {\n\t\t\tthis.scheduledCallback = setTimeout(() => {\n\t\t\t\tthis.scheduledCallback = null\n\t\t\t\tthis.executeNextTransaction()\n\t\t\t}, 0)\n\t\t}\n\t}\n}\n\nmodule.exports = GosConnection",
+    "content": "const MsgpackConnection = require('./msgpack-connection')\nconst Uint64 = require('./uint64')\nconst Transaction = require('./transaction')\nconst Ref = require('./ref')\nconst {TransactionRetryNeeded, TransactionRejectedError} = require('./errors')\nconst ObjectCache = require('./objectcache')\nconst {binaryToHex, asPromise} = require('./utils')\n\nlet nextConnectionNumber = 0\n\n/**\n * GosConnections represent the connection to the GoshawkDB.\n *\n * They should be acquired through the static {@link Goshawk.connect} function.\n */\nclass GosConnection {\n\t/** @private */\n\tconstructor(url) {\n\t\t/** @private used in logging to distinguish different connections */\n\t\tthis.connectionId = (nextConnectionNumber++)\n\t\t/** @private */\n\t\tthis.link = new MsgpackConnection(url, (\"000\" + this.connectionId).substr(-3))\n\n\t\t/**\n\t\t * The product and version information we sent to the server during the initial connection handshake.\n\t\t * @type {{Product: string, Version: string}}\n\t\t */\n\t\tthis.clientInfo = {Product: \"GoshawkDB\", Version: \"dev\"}\n\n\t\t/**\n\t\t * The product and version information we receive from the server during the initial handshake,\n\t\t * or null if it hasn't occurred yet.\n\t\t * @type {?{Product: string, Version: string}}\n\t\t */\n\t\tthis.serverInfo = null\n\n\t\t/**\n\t\t * The namespace that the server assigns to this client.\n\t\t * @type {?ArrayBuffer}\n\t\t */\n\t\tthis.namespace = null\n\n\t\t/**\n\t\t * The roots that this client has access to.\n\t\t * Provided by the server during handshake.\n\t\t * @type {{string: Ref}}\n\t\t */\n\t\tthis.roots = {}\n\n\t\t/** @private the function to deal with incoming messages */\n\t\tthis.messageHandler = null\n\t\t/** @private the top level cache that stores all the values and refs for objects the client knows about. */\n\t\tthis.cache = null\n\n\t\t// we control the first 8 bytes of transaction ids and new object ids (used during creation).\n\t\t// the namespace is appended to them when actually sent to the server.  We can't use normal js\n\t\t// numbers as javascript doesn't support 64 integers.  The only actual operation we need is 'increment'.\n\t\t/** @private */\n\t\tthis.nextTransactionId = Uint64.from(0, 0, 0, 0, 0, 0, 0, 0)\n\n\t\t/** @private the queue of transactions.*/\n\t\tthis.transactions = []\n\t\t/** @private the transaction currently being processed.*/\n\t\tthis.currentTransaction = null\n\t\t/** @private the timeout handle or null if no timeout to process a transaction is waiting*/\n\t\tthis.scheduledCallback = null\n\t}\n\n\t/**\n\t * Connects to the server.  If running in node, you will need to provide connectionOptions that include the client\n\t * certificate and key.\n\t *\n\t * @return {Promise<GosConnection, Error>}\n\t */\n\tconnect(connectionOptions) {\n\t\tconst serverHelloHandler = (message) => {\n\t\t\t// TODO? : a check could go here to ensure that the server version matches our version (from this.clientInfo.Version).\n\t\t\tthis.serverInfo = message\n\t\t\tthis.messageHandler = rootsHandler\n\t\t}\n\n\t\tconst rootsHandler = (message) => {\n\t\t\t// populate the roots\n\t\t\tthis.roots = {}\n\t\t\tfor (const root of message.Roots) {\n\t\t\t\tthis.roots[root.Name] = Ref.fromMessage(root)\n\t\t\t}\n\t\t\t// set the namespace\n\t\t\tthis.namespace = message.Namespace\n\n\t\t\t// now we're properly connected\n\t\t\tthis.messageHandler = null\n\t\t\tthis.cache = new ObjectCache(this.namespace)\n\t\t\tconsole.info(`Connection ${this.connectionId}: Connected to goshawk`, this.serverInfo, this.clientInfo, this.namespace, this.roots)\n\t\t\tthis._onConnectionNegotiated(this)\n\t\t}\n\n\t\t// This promise should resolve with a working, setup connection if the connection makes its way to a fully\n\t\t// negotiated connection: i.e. it connects, it swaps info, it loads the roots and the namespace and initialises the\n\t\t// relevant state.\n\t\t// If anything happens to disrupt this process before it completes, this promise will reject.\n\t\treturn new Promise((resolve, reject) => {\n\t\t\tthis._onConnectionNegotiated = resolve\n\t\t\tthis.messageHandler = serverHelloHandler\n\t\t\tthis.link.connect(\n\t\t\t\t// on message\n\t\t\t\t(data) => {\n\t\t\t\t\tif (this.messageHandler) {\n\t\t\t\t\t\tthis.messageHandler(data)\n\t\t\t\t\t} else {\n\t\t\t\t\t\tconsole.warn(`Connection ${this.connectionId}: No handler found for message`, data)\n\t\t\t\t\t}\n\t\t\t\t},\n\t\t\t\t// on end - if the connection stops for any reason (error, or deliberate) before it resolves then it rejects.\n\t\t\t\t(e) => reject(e),\n\t\t\t\t// on open we start the handshake by sending the client info.\n\t\t\t\t() => this.link.send(this.clientInfo),\n\t\t\t\tconnectionOptions\n\t\t\t)\n\t\t})\n\t}\n\n\t/**\n\t * Queues a transaction for running, then ensures that transaction processing is happening.\n\t * The returned promise resolves with the value returned by the fn once the transaction has committed.  The fn may be\n\t * run multiple times and so should avoid side effects.\n\t * fn may be an asynchronous or a synchronous function.\n\t *\n\t * @param {function(txn: Transaction): {*|Promise<*, Error>}}} fn the transaction function.  This function may be run multiple times and should rethrow any TransactionRetryNeeded exceptions.\n\t * @returns {Promise<*, Error>} a promise that resolves to the result of the transaction function once the transaction submits or an error if it cannot.\n \t */\n\ttransact(fn) {\n\t\tif (fn instanceof Function === false) {\n\t\t\tthrow new TypeError(`Connection ${this.connectionId}: Transaction argument must be a function, was ${String(fn)}`)\n\t\t}\n\n\t\treturn new Promise((resolve, reject) => {\n\t\t\tthis.transactions.push(new Transaction(fn, {onSuccess: resolve, onFail: reject}, this.roots, this.namespace, this.cache))\n\t\t\tthis.scheduleNextTransaction(false)\n\t\t})\n\t}\n\n\t/**\n\t * Closes the underlying link.\n\t */\n\tclose() {\n\t\tthis.link.close()\n\t}\n\n\t// private api\n\n\t/** @private\n\t * Actually runs the next queued transaction.\n\t */\n\texecuteNextTransaction() {\n\t\tif (this.currentTransaction != null) {\n\t\t\t// we're currently processing a transaction, exit without doing anything.\n\t\t\treturn\n\t\t}\n\n\t\tconst currentTransaction = this.currentTransaction = this.transactions.shift()\n\t\tconst txnIdWithNamespace = this.nextTransactionId.concat(this.namespace)\n\n\t\tconst succeed = (finalId, transactionResult) => {\n\t\t\tif (finalId) {\n\t\t\t\tcurrentTransaction.promoteCache(finalId)\n\t\t\t}\n\t\t\tcurrentTransaction.onSuccess(transactionResult)\n\t\t\tthis.scheduleNextTransaction(true)\n\t\t}\n\t\tconst retry = () => {\n\t\t\tcurrentTransaction.reset()\n\t\t\tthis.transactions.unshift(currentTransaction)\n\t\t\tthis.scheduleNextTransaction(true)\n\t\t}\n\t\tconst fail = (err) => {\n\t\t\tcurrentTransaction.onFail(err)\n\t\t\tthis.scheduleNextTransaction(true)\n\t\t}\n\t\tconst sendTransaction = (result) => {\n\t\t\tconst transactionMessage = currentTransaction.toMessage(txnIdWithNamespace)\n\t\t\tif (transactionMessage.ClientTxnSubmission.Actions.length > 0) {\n\t\t\t\tthis.link.request(transactionMessage)\n\t\t\t\t\t.then((response) => {\n\t\t\t\t\t\tthis.updateFromTransactionResponse(response)\n\t\t\t\t\t\tconst outcome = response.ClientTxnOutcome\n\t\t\t\t\t\tif (outcome.Commit) {\n\t\t\t\t\t\t\tsucceed(outcome.FinalId, result)\n\t\t\t\t\t\t} else if (outcome.Error != \"\") {\n\t\t\t\t\t\t\tfail(new TransactionRejectedError(outcome.Error))\n\t\t\t\t\t\t} else if (outcome.Abort) {\n\t\t\t\t\t\t\tretry()\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tfail(\"Unknown response message \" + JSON.stringify(outcome))\n\t\t\t\t\t\t}\n\t\t\t\t\t}).catch(fail)\n\t\t\t} else {\n\t\t\t\tsucceed(undefined, result)\n\t\t\t}\n\t\t}\n\n\t\t// we use asPromise, since the result of running fn might be a Promise.\n\t\tasPromise(() => {\n\t\t\treturn currentTransaction.fn(currentTransaction)\n\t\t}).catch( (e) => {\n\t\t\tif (e instanceof TransactionRetryNeeded === false) {\n\t\t\t\tthrow e\n\t\t\t}\n\t\t}).then(sendTransaction, fail)\n\t}\n\n\t/** @private\n\t * Updates the top level connection cache and counters based on a response from the server.\n\t * @param response the msgpack response.\n\t */\n\tupdateFromTransactionResponse(response) {\n\t\t// Responses contain a final transaction id.  We take the first 8 bytes and increment it.\n\t\tthis.nextTransactionId = Uint64.fromBinary(response.ClientTxnOutcome.FinalId).inc()\n\t\t// If we received an Abort message, then we may also have received some cache update instructions.\n\t\tif (response.ClientTxnOutcome.Abort) {\n\t\t\tfor (let update of response.ClientTxnOutcome.Abort) {\n\t\t\t\tconst otherTxnId = update.Version.buffer\n\t\t\t\tfor (let action of update.Actions) {\n\t\t\t\t\tconst id = action.VarId\n\t\t\t\t\tif (action.Delete) {\n\t\t\t\t\t\tconsole.debug(`Connection ${this.connectionId}: Removing ${binaryToHex(id)} from cache.`)\n\t\t\t\t\t\tthis.cache.remove(id)\n\t\t\t\t\t} else {\n\t\t\t\t\t\tconst writeData = action.Write || action.Create\n\t\t\t\t\t\tif (writeData) {\n\t\t\t\t\t\t\tthis.cache.get(id).update(otherTxnId, writeData.Value.buffer, writeData.References.map(Ref.fromMessage))\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\t}\n\n\t/** @private\n\t * If there is no transaction currently processing and we haven't scheduled one\n\t * and there is a transaction waiting to be processed, then schedule it.\n\t * @param {boolean} clearCurrentTransaction if true, this will first clear the current transaction.\n\t */\n\tscheduleNextTransaction(clearCurrentTransaction) {\n\t\tif (clearCurrentTransaction) {\n\t\t\tthis.currentTransaction = null\n\t\t}\n\t\tif (this.scheduledCallback == null && this.currentTransaction == null && this.transactions.length > 0) {\n\t\t\tthis.scheduledCallback = setTimeout(() => {\n\t\t\t\tthis.scheduledCallback = null\n\t\t\t\tthis.executeNextTransaction()\n\t\t\t}, 0)\n\t\t}\n\t}\n}\n\nmodule.exports = GosConnection",
     "static": true,
     "longname": "src/gos-connection.js",
     "access": null,
@@ -584,29 +584,13 @@
   {
     "__docId__": 29,
     "kind": "member",
-    "name": "nextNewObjectId",
-    "memberof": "src/gos-connection.js~GosConnection",
-    "static": false,
-    "longname": "src/gos-connection.js~GosConnection#nextNewObjectId",
-    "access": "private",
-    "description": null,
-    "lineNumber": 61,
-    "type": {
-      "types": [
-        "*"
-      ]
-    }
-  },
-  {
-    "__docId__": 30,
-    "kind": "member",
     "name": "transactions",
     "memberof": "src/gos-connection.js~GosConnection",
     "static": false,
     "longname": "src/gos-connection.js~GosConnection#transactions",
     "access": "private",
     "description": null,
-    "lineNumber": 64,
+    "lineNumber": 62,
     "type": {
       "types": [
         "*[]"
@@ -614,12 +598,28 @@
     }
   },
   {
-    "__docId__": 31,
+    "__docId__": 30,
     "kind": "member",
     "name": "currentTransaction",
     "memberof": "src/gos-connection.js~GosConnection",
     "static": false,
     "longname": "src/gos-connection.js~GosConnection#currentTransaction",
+    "access": "private",
+    "description": null,
+    "lineNumber": 64,
+    "type": {
+      "types": [
+        "*"
+      ]
+    }
+  },
+  {
+    "__docId__": 31,
+    "kind": "member",
+    "name": "scheduledCallback",
+    "memberof": "src/gos-connection.js~GosConnection",
+    "static": false,
+    "longname": "src/gos-connection.js~GosConnection#scheduledCallback",
     "access": "private",
     "description": null,
     "lineNumber": 66,
@@ -631,22 +631,6 @@
   },
   {
     "__docId__": 32,
-    "kind": "member",
-    "name": "scheduledCallback",
-    "memberof": "src/gos-connection.js~GosConnection",
-    "static": false,
-    "longname": "src/gos-connection.js~GosConnection#scheduledCallback",
-    "access": "private",
-    "description": null,
-    "lineNumber": 68,
-    "type": {
-      "types": [
-        "*"
-      ]
-    }
-  },
-  {
-    "__docId__": 33,
     "kind": "method",
     "name": "connect",
     "memberof": "src/gos-connection.js~GosConnection",
@@ -656,7 +640,7 @@
     "longname": "src/gos-connection.js~GosConnection#connect",
     "access": null,
     "description": "Connects to the server.  If running in node, you will need to provide connectionOptions that include the client\ncertificate and key.",
-    "lineNumber": 77,
+    "lineNumber": 75,
     "params": [
       {
         "name": "connectionOptions",
@@ -675,7 +659,7 @@
     }
   },
   {
-    "__docId__": 34,
+    "__docId__": 33,
     "kind": "member",
     "name": "serverInfo",
     "memberof": "src/gos-connection.js~GosConnection",
@@ -683,7 +667,30 @@
     "longname": "src/gos-connection.js~GosConnection#serverInfo",
     "access": null,
     "description": null,
-    "lineNumber": 80,
+    "lineNumber": 78,
+    "undocument": true,
+    "unknown": [
+      {
+        "tagName": "@_undocument",
+        "tagValue": ""
+      }
+    ],
+    "type": {
+      "types": [
+        "*"
+      ]
+    }
+  },
+  {
+    "__docId__": 34,
+    "kind": "member",
+    "name": "messageHandler",
+    "memberof": "src/gos-connection.js~GosConnection",
+    "static": false,
+    "longname": "src/gos-connection.js~GosConnection#messageHandler",
+    "access": null,
+    "description": null,
+    "lineNumber": 79,
     "undocument": true,
     "unknown": [
       {
@@ -700,36 +707,13 @@
   {
     "__docId__": 35,
     "kind": "member",
-    "name": "messageHandler",
-    "memberof": "src/gos-connection.js~GosConnection",
-    "static": false,
-    "longname": "src/gos-connection.js~GosConnection#messageHandler",
-    "access": null,
-    "description": null,
-    "lineNumber": 81,
-    "undocument": true,
-    "unknown": [
-      {
-        "tagName": "@_undocument",
-        "tagValue": ""
-      }
-    ],
-    "type": {
-      "types": [
-        "*"
-      ]
-    }
-  },
-  {
-    "__docId__": 36,
-    "kind": "member",
     "name": "roots",
     "memberof": "src/gos-connection.js~GosConnection",
     "static": false,
     "longname": "src/gos-connection.js~GosConnection#roots",
     "access": null,
     "description": null,
-    "lineNumber": 86,
+    "lineNumber": 84,
     "undocument": true,
     "unknown": [
       {
@@ -744,7 +728,7 @@
     }
   },
   {
-    "__docId__": 37,
+    "__docId__": 36,
     "kind": "member",
     "name": "namespace",
     "memberof": "src/gos-connection.js~GosConnection",
@@ -752,7 +736,30 @@
     "longname": "src/gos-connection.js~GosConnection#namespace",
     "access": null,
     "description": null,
-    "lineNumber": 91,
+    "lineNumber": 89,
+    "undocument": true,
+    "unknown": [
+      {
+        "tagName": "@_undocument",
+        "tagValue": ""
+      }
+    ],
+    "type": {
+      "types": [
+        "*"
+      ]
+    }
+  },
+  {
+    "__docId__": 37,
+    "kind": "member",
+    "name": "messageHandler",
+    "memberof": "src/gos-connection.js~GosConnection",
+    "static": false,
+    "longname": "src/gos-connection.js~GosConnection#messageHandler",
+    "access": null,
+    "description": null,
+    "lineNumber": 92,
     "undocument": true,
     "unknown": [
       {
@@ -769,13 +776,13 @@
   {
     "__docId__": 38,
     "kind": "member",
-    "name": "messageHandler",
+    "name": "cache",
     "memberof": "src/gos-connection.js~GosConnection",
     "static": false,
-    "longname": "src/gos-connection.js~GosConnection#messageHandler",
+    "longname": "src/gos-connection.js~GosConnection#cache",
     "access": null,
     "description": null,
-    "lineNumber": 94,
+    "lineNumber": 93,
     "undocument": true,
     "unknown": [
       {
@@ -792,13 +799,13 @@
   {
     "__docId__": 39,
     "kind": "member",
-    "name": "cache",
+    "name": "_onConnectionNegotiated",
     "memberof": "src/gos-connection.js~GosConnection",
     "static": false,
-    "longname": "src/gos-connection.js~GosConnection#cache",
+    "longname": "src/gos-connection.js~GosConnection#_onConnectionNegotiated",
     "access": null,
     "description": null,
-    "lineNumber": 95,
+    "lineNumber": 103,
     "undocument": true,
     "unknown": [
       {
@@ -815,13 +822,13 @@
   {
     "__docId__": 40,
     "kind": "member",
-    "name": "_onConnectionNegotiated",
+    "name": "messageHandler",
     "memberof": "src/gos-connection.js~GosConnection",
     "static": false,
-    "longname": "src/gos-connection.js~GosConnection#_onConnectionNegotiated",
+    "longname": "src/gos-connection.js~GosConnection#messageHandler",
     "access": null,
     "description": null,
-    "lineNumber": 105,
+    "lineNumber": 104,
     "undocument": true,
     "unknown": [
       {
@@ -837,29 +844,6 @@
   },
   {
     "__docId__": 41,
-    "kind": "member",
-    "name": "messageHandler",
-    "memberof": "src/gos-connection.js~GosConnection",
-    "static": false,
-    "longname": "src/gos-connection.js~GosConnection#messageHandler",
-    "access": null,
-    "description": null,
-    "lineNumber": 106,
-    "undocument": true,
-    "unknown": [
-      {
-        "tagName": "@_undocument",
-        "tagValue": ""
-      }
-    ],
-    "type": {
-      "types": [
-        "*"
-      ]
-    }
-  },
-  {
-    "__docId__": 42,
     "kind": "method",
     "name": "transact",
     "memberof": "src/gos-connection.js~GosConnection",
@@ -869,7 +853,7 @@
     "longname": "src/gos-connection.js~GosConnection#transact",
     "access": null,
     "description": "Queues a transaction for running, then ensures that transaction processing is happening.\nThe returned promise resolves with the value returned by the fn once the transaction has committed.  The fn may be\nrun multiple times and so should avoid side effects.\nfn may be an asynchronous or a synchronous function.",
-    "lineNumber": 134,
+    "lineNumber": 132,
     "unknown": [
       {
         "tagName": "@returns",
@@ -899,7 +883,7 @@
     }
   },
   {
-    "__docId__": 43,
+    "__docId__": 42,
     "kind": "method",
     "name": "close",
     "memberof": "src/gos-connection.js~GosConnection",
@@ -909,39 +893,11 @@
     "longname": "src/gos-connection.js~GosConnection#close",
     "access": null,
     "description": "Closes the underlying link.",
-    "lineNumber": 148,
+    "lineNumber": 146,
     "params": []
   },
   {
-    "__docId__": 44,
-    "kind": "method",
-    "name": "getNewObjectId",
-    "memberof": "src/gos-connection.js~GosConnection",
-    "generator": false,
-    "async": false,
-    "static": false,
-    "longname": "src/gos-connection.js~GosConnection#getNewObjectId",
-    "access": "private",
-    "description": null,
-    "lineNumber": 158,
-    "unknown": [
-      {
-        "tagName": "@returns",
-        "tagValue": "{Uint8Array}"
-      }
-    ],
-    "params": [],
-    "return": {
-      "nullable": null,
-      "types": [
-        "Uint8Array"
-      ],
-      "spread": false,
-      "description": ""
-    }
-  },
-  {
-    "__docId__": 45,
+    "__docId__": 43,
     "kind": "method",
     "name": "executeNextTransaction",
     "memberof": "src/gos-connection.js~GosConnection",
@@ -951,11 +907,11 @@
     "longname": "src/gos-connection.js~GosConnection#executeNextTransaction",
     "access": "private",
     "description": null,
-    "lineNumber": 167,
+    "lineNumber": 155,
     "params": []
   },
   {
-    "__docId__": 46,
+    "__docId__": 44,
     "kind": "method",
     "name": "updateFromTransactionResponse",
     "memberof": "src/gos-connection.js~GosConnection",
@@ -965,7 +921,7 @@
     "longname": "src/gos-connection.js~GosConnection#updateFromTransactionResponse",
     "access": "private",
     "description": null,
-    "lineNumber": 228,
+    "lineNumber": 216,
     "params": [
       {
         "nullable": null,
@@ -980,7 +936,7 @@
     ]
   },
   {
-    "__docId__": 47,
+    "__docId__": 45,
     "kind": "member",
     "name": "nextTransactionId",
     "memberof": "src/gos-connection.js~GosConnection",
@@ -988,7 +944,55 @@
     "longname": "src/gos-connection.js~GosConnection#nextTransactionId",
     "access": null,
     "description": null,
-    "lineNumber": 230,
+    "lineNumber": 218,
+    "undocument": true,
+    "unknown": [
+      {
+        "tagName": "@_undocument",
+        "tagValue": ""
+      }
+    ],
+    "type": {
+      "types": [
+        "*"
+      ]
+    }
+  },
+  {
+    "__docId__": 46,
+    "kind": "method",
+    "name": "scheduleNextTransaction",
+    "memberof": "src/gos-connection.js~GosConnection",
+    "generator": false,
+    "async": false,
+    "static": false,
+    "longname": "src/gos-connection.js~GosConnection#scheduleNextTransaction",
+    "access": "private",
+    "description": null,
+    "lineNumber": 244,
+    "params": [
+      {
+        "nullable": null,
+        "types": [
+          "boolean"
+        ],
+        "spread": false,
+        "optional": false,
+        "name": "clearCurrentTransaction",
+        "description": "if true, this will first clear the current transaction."
+      }
+    ]
+  },
+  {
+    "__docId__": 47,
+    "kind": "member",
+    "name": "currentTransaction",
+    "memberof": "src/gos-connection.js~GosConnection",
+    "static": false,
+    "longname": "src/gos-connection.js~GosConnection#currentTransaction",
+    "access": null,
+    "description": null,
+    "lineNumber": 246,
     "undocument": true,
     "unknown": [
       {
@@ -1004,39 +1008,37 @@
   },
   {
     "__docId__": 48,
-    "kind": "method",
-    "name": "scheduleNextTransaction",
+    "kind": "member",
+    "name": "scheduledCallback",
     "memberof": "src/gos-connection.js~GosConnection",
-    "generator": false,
-    "async": false,
     "static": false,
-    "longname": "src/gos-connection.js~GosConnection#scheduleNextTransaction",
-    "access": "private",
+    "longname": "src/gos-connection.js~GosConnection#scheduledCallback",
+    "access": null,
     "description": null,
-    "lineNumber": 256,
-    "params": [
+    "lineNumber": 249,
+    "undocument": true,
+    "unknown": [
       {
-        "nullable": null,
-        "types": [
-          "boolean"
-        ],
-        "spread": false,
-        "optional": false,
-        "name": "clearCurrentTransaction",
-        "description": "if true, this will first clear the current transaction."
+        "tagName": "@_undocument",
+        "tagValue": ""
       }
-    ]
+    ],
+    "type": {
+      "types": [
+        "*"
+      ]
+    }
   },
   {
     "__docId__": 49,
     "kind": "member",
-    "name": "currentTransaction",
+    "name": "scheduledCallback",
     "memberof": "src/gos-connection.js~GosConnection",
     "static": false,
-    "longname": "src/gos-connection.js~GosConnection#currentTransaction",
+    "longname": "src/gos-connection.js~GosConnection#scheduledCallback",
     "access": null,
     "description": null,
-    "lineNumber": 258,
+    "lineNumber": 250,
     "undocument": true,
     "unknown": [
       {
@@ -1052,52 +1054,6 @@
   },
   {
     "__docId__": 50,
-    "kind": "member",
-    "name": "scheduledCallback",
-    "memberof": "src/gos-connection.js~GosConnection",
-    "static": false,
-    "longname": "src/gos-connection.js~GosConnection#scheduledCallback",
-    "access": null,
-    "description": null,
-    "lineNumber": 261,
-    "undocument": true,
-    "unknown": [
-      {
-        "tagName": "@_undocument",
-        "tagValue": ""
-      }
-    ],
-    "type": {
-      "types": [
-        "*"
-      ]
-    }
-  },
-  {
-    "__docId__": 51,
-    "kind": "member",
-    "name": "scheduledCallback",
-    "memberof": "src/gos-connection.js~GosConnection",
-    "static": false,
-    "longname": "src/gos-connection.js~GosConnection#scheduledCallback",
-    "access": null,
-    "description": null,
-    "lineNumber": 262,
-    "undocument": true,
-    "unknown": [
-      {
-        "tagName": "@_undocument",
-        "tagValue": ""
-      }
-    ],
-    "type": {
-      "types": [
-        "*"
-      ]
-    }
-  },
-  {
-    "__docId__": 52,
     "kind": "file",
     "name": "src/goshawk.js",
     "content": "const GosConnection = require('./gos-connection')\n\n// Ensure that all our calls to console.debug don't cause errors.\nif (!global.console.debug) {\n\tglobal.console.debug = () => {}\n}\n\n/**\n * Goshawkdb client.\n */\nmodule.exports = class Goshawk {\n\t/**\n\t * Connects to the websocket port of a goshawkdb server.\n\t * See the [goshawkdb documentation](https://goshawkdb.io/documentation.html) for more information.\n\t *\n\t * @param {string} url the url of the websocket endpoint. e.g. wss://localhost:9999/ws\n\t * @param {*} connectionOptions in node.js, the connection options are used to make the connection.\n\t * \t\t\t\tThey are for the WS module and are defined [here](https://github.com/websockets/ws/blob/master/doc/ws.md).\n\t * \t\t\t\tThe options should include `key`, `cert` and if you don't want it to check\n\t * \t\t\t\tthe server certificates, `{rejectUnauthorized: false}`.\n\t * @return {Promise<GosConnection, Error>} A promise that resolves with a connection or rejects with an error.\n\t */\n\tstatic connect(url, connectionOptions) {\n\t\treturn new GosConnection(url).connect(connectionOptions)\n\t}\n}\n",
@@ -1108,7 +1064,7 @@
     "lineNumber": 1
   },
   {
-    "__docId__": 53,
+    "__docId__": 51,
     "kind": "variable",
     "name": "GosConnection",
     "memberof": "src/goshawk.js",
@@ -1134,7 +1090,7 @@
     }
   },
   {
-    "__docId__": 54,
+    "__docId__": 52,
     "kind": "class",
     "name": "Goshawk",
     "memberof": "src/goshawk.js",
@@ -1149,7 +1105,7 @@
     "interface": false
   },
   {
-    "__docId__": 55,
+    "__docId__": 53,
     "kind": "method",
     "name": "connect",
     "memberof": "src/goshawk.js~Goshawk",
@@ -1192,7 +1148,7 @@
     }
   },
   {
-    "__docId__": 56,
+    "__docId__": 54,
     "kind": "file",
     "name": "src/msgpack-connection.js",
     "content": "const msgpack = require('msgpack-lite/dist/msgpack.min.js')\nconst WebSocket = require('ws')\n\n/**\n * The websocket and Msgpack connection.\n * @private\n */\nclass MsgpackConnection {\n\tconstructor(url, connectionLabel = \"\") {\n\t\tthis.url = url\n\t\t// connectionLabel is purely used for logging.\n\t\tthis.connectionLabel = connectionLabel\n\t\tthis.websocket = null\n\t\tthis.options = {\n\t\t\tcodec: msgpack.createCodec({binarraybuffer: true})\n\t\t}\n\t\t// all the callbacks!\n\t\tthis.onOpen = null\n\t\tthis.onEnd = null\n\t\tthis.onMessage = null\n\t\tthis.onClose = null\n\t\tthis.onError = null\n\t}\n\n\tconnect(onMessage, onEnd, onOpen, connectionOptions) {\n\t\tthis.onMessage = onMessage\n\t\t// onEnd triggers onError or onClose.\n\t\tthis.onEnd = onEnd\n\t\tthis.onOpen = onOpen\n\t\tconst websocket = this.websocket = new WebSocket(this.url, undefined, connectionOptions)\n\t\twebsocket.binaryType = 'arraybuffer'\n\t\twebsocket.onopen = (evt) => {\n\t\t\tconsole.debug(`Connection ${this.connectionLabel}: Connection Open`)\n\t\t\tif (this.onOpen) {\n\t\t\t\tthis.onOpen(evt)\n\t\t\t}\n\t\t}\n\t\twebsocket.onclose = (evt) => {\n\t\t\tconsole.debug(`Connection ${this.connectionLabel}: Connection Closed`, evt.code, evt.reason)\n\t\t\tif (this.onEnd) {\n\t\t\t\tthis.onEnd(evt)\n\t\t\t}\n\t\t\tif (this.onClose) {\n\t\t\t\tthis.onClose(evt)\n\t\t\t}\n\t\t}\n\t\twebsocket.onerror = (evt) => {\n\t\t\tconsole.error(`Connection ${this.connectionLabel}: Connection Error`, evt.code, evt.reason)\n\t\t\tif (this.onEnd) {\n\t\t\t\tthis.onEnd(evt)\n\t\t\t}\n\t\t\tif (this.onError) {\n\t\t\t\tthis.onError(evt)\n\t\t\t}\n\t\t}\n\t\twebsocket.onmessage = (messageEvent) => {\n\t\t\tconst data = msgpack.decode(new Uint8Array(messageEvent.data));\n\t\t\tconsole.debug(`${this.connectionLabel} <`, data)\n\n\t\t\tif (this.onMessage) {\n\t\t\t\tthis.onMessage(data)\n\t\t\t}\n\t\t}\n\t}\n\n\tsend(message) {\n\t\tconsole.debug(`${this.connectionLabel} >`, message)\n\t\tthis.websocket.send(msgpack.encode(message, this.options))\n\t}\n\n\t// sends a message, and returns a promise which resolves with the next message back from the server. This helps\n\t// make a request/response pattern easy.  It replaces onMessage and onEnd until it receives the message.\n\trequest(message) {\n\t\tconst oldHandler = this.onMessage\n\t\tconst oldEndHandler = this.onEnd\n\t\treturn new Promise((resolve, reject) => {\n\t\t\tthis.onMessage = (msg) => {\n\t\t\t\tresolve(msg)\n\t\t\t\tthis.onMessage = oldHandler\n\t\t\t\tthis.onEnd = oldEndHandler\n\t\t\t}\n\t\t\tthis.onEnd = (evt) => {\n\t\t\t\tthis.onMessage = oldHandler\n\t\t\t\tthis.onEnd = oldEndHandler\n\t\t\t\treject(evt)\n\t\t\t\tif (oldEndHandler) {\n\t\t\t\t\toldEndHandler(evt)\n\t\t\t\t}\n\t\t\t}\n\t\t\tthis.send(message)\n\t\t})\n\t}\n\n\tclose() {\n\t\tthis.websocket.close()\n\t}\n}\n\nmodule.exports = MsgpackConnection",
@@ -1203,7 +1159,7 @@
     "lineNumber": 1
   },
   {
-    "__docId__": 57,
+    "__docId__": 55,
     "kind": "variable",
     "name": "msgpack",
     "memberof": "src/msgpack-connection.js",
@@ -1229,7 +1185,7 @@
     }
   },
   {
-    "__docId__": 58,
+    "__docId__": 56,
     "kind": "variable",
     "name": "WebSocket",
     "memberof": "src/msgpack-connection.js",
@@ -1255,7 +1211,7 @@
     }
   },
   {
-    "__docId__": 59,
+    "__docId__": 57,
     "kind": "class",
     "name": "MsgpackConnection",
     "memberof": "src/msgpack-connection.js",
@@ -1270,7 +1226,7 @@
     "interface": false
   },
   {
-    "__docId__": 60,
+    "__docId__": 58,
     "kind": "constructor",
     "name": "constructor",
     "memberof": "src/msgpack-connection.js~MsgpackConnection",
@@ -1307,7 +1263,7 @@
     ]
   },
   {
-    "__docId__": 61,
+    "__docId__": 59,
     "kind": "member",
     "name": "url",
     "memberof": "src/msgpack-connection.js~MsgpackConnection",
@@ -1330,7 +1286,7 @@
     }
   },
   {
-    "__docId__": 62,
+    "__docId__": 60,
     "kind": "member",
     "name": "connectionLabel",
     "memberof": "src/msgpack-connection.js~MsgpackConnection",
@@ -1353,7 +1309,7 @@
     }
   },
   {
-    "__docId__": 63,
+    "__docId__": 61,
     "kind": "member",
     "name": "websocket",
     "memberof": "src/msgpack-connection.js~MsgpackConnection",
@@ -1376,7 +1332,7 @@
     }
   },
   {
-    "__docId__": 64,
+    "__docId__": 62,
     "kind": "member",
     "name": "options",
     "memberof": "src/msgpack-connection.js~MsgpackConnection",
@@ -1399,7 +1355,7 @@
     }
   },
   {
-    "__docId__": 65,
+    "__docId__": 63,
     "kind": "member",
     "name": "onOpen",
     "memberof": "src/msgpack-connection.js~MsgpackConnection",
@@ -1422,7 +1378,7 @@
     }
   },
   {
-    "__docId__": 66,
+    "__docId__": 64,
     "kind": "member",
     "name": "onEnd",
     "memberof": "src/msgpack-connection.js~MsgpackConnection",
@@ -1445,7 +1401,7 @@
     }
   },
   {
-    "__docId__": 67,
+    "__docId__": 65,
     "kind": "member",
     "name": "onMessage",
     "memberof": "src/msgpack-connection.js~MsgpackConnection",
@@ -1468,7 +1424,7 @@
     }
   },
   {
-    "__docId__": 68,
+    "__docId__": 66,
     "kind": "member",
     "name": "onClose",
     "memberof": "src/msgpack-connection.js~MsgpackConnection",
@@ -1491,7 +1447,7 @@
     }
   },
   {
-    "__docId__": 69,
+    "__docId__": 67,
     "kind": "member",
     "name": "onError",
     "memberof": "src/msgpack-connection.js~MsgpackConnection",
@@ -1514,7 +1470,7 @@
     }
   },
   {
-    "__docId__": 70,
+    "__docId__": 68,
     "kind": "method",
     "name": "connect",
     "memberof": "src/msgpack-connection.js~MsgpackConnection",
@@ -1560,7 +1516,7 @@
     ]
   },
   {
-    "__docId__": 71,
+    "__docId__": 69,
     "kind": "member",
     "name": "onMessage",
     "memberof": "src/msgpack-connection.js~MsgpackConnection",
@@ -1583,7 +1539,7 @@
     }
   },
   {
-    "__docId__": 72,
+    "__docId__": 70,
     "kind": "member",
     "name": "onEnd",
     "memberof": "src/msgpack-connection.js~MsgpackConnection",
@@ -1606,7 +1562,7 @@
     }
   },
   {
-    "__docId__": 73,
+    "__docId__": 71,
     "kind": "member",
     "name": "onOpen",
     "memberof": "src/msgpack-connection.js~MsgpackConnection",
@@ -1629,7 +1585,7 @@
     }
   },
   {
-    "__docId__": 74,
+    "__docId__": 72,
     "kind": "method",
     "name": "send",
     "memberof": "src/msgpack-connection.js~MsgpackConnection",
@@ -1657,7 +1613,7 @@
     ]
   },
   {
-    "__docId__": 75,
+    "__docId__": 73,
     "kind": "method",
     "name": "request",
     "memberof": "src/msgpack-connection.js~MsgpackConnection",
@@ -1690,7 +1646,7 @@
     }
   },
   {
-    "__docId__": 76,
+    "__docId__": 74,
     "kind": "member",
     "name": "onMessage",
     "memberof": "src/msgpack-connection.js~MsgpackConnection",
@@ -1713,7 +1669,7 @@
     }
   },
   {
-    "__docId__": 77,
+    "__docId__": 75,
     "kind": "member",
     "name": "onMessage",
     "memberof": "src/msgpack-connection.js~MsgpackConnection",
@@ -1736,7 +1692,7 @@
     }
   },
   {
-    "__docId__": 78,
+    "__docId__": 76,
     "kind": "member",
     "name": "onEnd",
     "memberof": "src/msgpack-connection.js~MsgpackConnection",
@@ -1759,7 +1715,7 @@
     }
   },
   {
-    "__docId__": 79,
+    "__docId__": 77,
     "kind": "member",
     "name": "onEnd",
     "memberof": "src/msgpack-connection.js~MsgpackConnection",
@@ -1782,7 +1738,7 @@
     }
   },
   {
-    "__docId__": 80,
+    "__docId__": 78,
     "kind": "member",
     "name": "onMessage",
     "memberof": "src/msgpack-connection.js~MsgpackConnection",
@@ -1805,7 +1761,7 @@
     }
   },
   {
-    "__docId__": 81,
+    "__docId__": 79,
     "kind": "member",
     "name": "onEnd",
     "memberof": "src/msgpack-connection.js~MsgpackConnection",
@@ -1828,7 +1784,7 @@
     }
   },
   {
-    "__docId__": 82,
+    "__docId__": 80,
     "kind": "method",
     "name": "close",
     "memberof": "src/msgpack-connection.js~MsgpackConnection",
@@ -1849,7 +1805,7 @@
     "params": []
   },
   {
-    "__docId__": 83,
+    "__docId__": 81,
     "kind": "file",
     "name": "src/objectcache.js",
     "content": "const {binaryToHex, toArrayBuffer} = require('./utils')\nconst {TransactionRetryNeeded, MutationNotAllowed} = require('./errors')\nconst Uint64 = require('./uint64')\nconst Ref = require('./ref')\nconst Goshawk = require('./goshawk')\n\nfunction checkRefs(refs) {\n\tfor (let i = 0; i < refs.length; ++i) {\n\t\tconst ref = refs[i]\n\t\tif (ref instanceof Ref === false) {\n\t\t\tthrow new TypeError(`Reference ${i} was not of reference type - was a ${ref.constructor.name} : ${ref.toString()}`)\n\t\t}\n\t}\n}\n\n/**\n * The top level object cache. It keeps objects value and refs stored against their id.\n * @private\n */\nclass ObjectCache {\n\tconstructor() {\n\t\tthis.objects = new Map()\n\t}\n\n\tget(id) {\n\t\tconst hashable = binaryToHex(id)\n\t\tif (!this.objects.has(hashable)) {\n\t\t\tthis.objects.set(hashable, new ObjectCacheEntry(id))\n\t\t}\n\t\treturn this.objects.get(hashable)\n\t}\n\n\tremove(id) {\n\t\tconst hashable = binaryToHex(id)\n\t\tif (!this.objects.has(hashable)) {\n\t\t\tthrow new Error(`Unexpected remove of id ${hashable}`)\n\t\t}\n\t\tthis.objects.delete(hashable)\n\t}\n\n\tgetTemporaryView() {\n\t\treturn new CopyCache(this)\n\t}\n}\n\nmodule.exports = ObjectCache\n\n// An ObjectCacheEntry represents the clients knowledge about a GoshawkDB Object.\n//  - It should always have an id.\n//  - If it contains values known to have been in the database (either they have been sent in a cache update, or a\n//    create/write that has been acknowledged.  The values version and data.value and data.refs will be set.\n//\t- data.refs and data.value will be set after a write or create.\nclass ObjectCacheEntry {\n\tconstructor(id) {\n\t\tif (id instanceof Uint8Array == false) {\n\t\t\tthrow new TypeError(`id must be a uint8, was ${String(id)}`)\n\t\t}\n\t\tthis.id = id\n\n\t\tthis.version = null\n\t\tthis.data = {\n\t\t\tvalue: null,\n\t\t\trefs: null\n\t\t}\n\n\t\t// best effort attempt to restrict mutations in the data I return to the user.\n\t\tthis.readOnlyData = Object.create({}, {\n\t\t\t\tvalue: {\n\t\t\t\t\tset: () => {\n\t\t\t\t\t\tthrow new MutationNotAllowed(\"Cannot set value without a transaction.write call.\")\n\t\t\t\t\t},\n\t\t\t\t\tget: () => {\n\t\t\t\t\t\treturn this.data.value\n\t\t\t\t\t}\n\t\t\t\t},\n\t\t\t\trefs: {\n\t\t\t\t\tset: () => {\n\t\t\t\t\t\tthrow new MutationNotAllowed(\"Cannot set references without a transaction.write call.\")\n\t\t\t\t\t},\n\t\t\t\t\tget: () => {\n\t\t\t\t\t\tconst srcRefs = this.data.refs\n\t\t\t\t\t\tif (global.Proxy) {\n\t\t\t\t\t\t\treturn new Proxy(srcRefs, {\n\t\t\t\t\t\t\t\tset: () => {\n\t\t\t\t\t\t\t\t\tthrow new MutationNotAllowed(\"Cannot change references without a transaction.write call.\")\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t})\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\treturn srcRefs.slice()\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t},\n\t\t\t\tversion: {\n\t\t\t\t\tset: () => {\n\t\t\t\t\t\tthrow new MutationNotAllowed(\"Cannot set references without a transaction.write call.\")\n\t\t\t\t\t},\n\t\t\t\t\tget: () => {\n\t\t\t\t\t\treturn this.version\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t})\n\n\t\t// Record which actions have occurred on this object from the client.\n\t\t// These are only needed on objects within a transactions cache, not at the top level.\n\t\t//  - If something has been written or created, calling read on it has no effect (it is answered from cache).\n\t\t//  - If something has been created, calling write on it has no effect (the create is merely updated to the contents of the write).\n\t\tthis.hasBeenWritten = false\n\t\tthis.hasBeenRead = false\n\t\tthis.hasBeenCreated = false\n\t}\n\n\t// Updates representing version, value and refs are they are in the remote database.  Can populate on an abort or a submit.\n\tupdate(version, value, refs) {\n\t\tvalue = toArrayBuffer(value)\n\t\tcheckRefs(refs)\n\t\tthis.data.value = value\n\t\tthis.data.refs = refs\n\t\tthis.version = toArrayBuffer(version)\n\t}\n\n\tread() {\n\t\tif (!this.hasBeenWritten && !this.hasBeenCreated) {\n\t\t\tthis.hasBeenRead = true\n\t\t}\n\t\tif (this.hasData()) {\n\t\t\treturn this.readOnlyData\n\t\t}\n\n\t\tthrow new TransactionRetryNeeded(`Object ${binaryToHex(this.id)} not present in cache`)\n\t}\n\n\twrite(value, refs) {\n\t\tvalue = toArrayBuffer(value)\n\t\tcheckRefs(refs)\n\t\tif (!this.hasBeenCreated) {\n\t\t\tthis.hasBeenWritten = true\n\t\t}\n\t\tthis.data.value = value\n\t\tthis.data.refs = refs\n\t}\n\n\thasData() {\n\t\treturn this.hasBeenCreated || this.hasBeenWritten || this.version != null\n\t}\n\n\tcreate(value, refs) {\n\t\tif (value instanceof ArrayBuffer != true) {\n\t\t\tthrow new TypeError(\"values should be array buffers : \" + value)\n\t\t}\n\t\tcheckRefs(refs)\n\t\tthis.hasBeenCreated = true\n\t\tthis.data.value = value\n\t\tthis.data.refs = refs\n\t}\n\n\tclone() {\n\t\treturn new ObjectCacheEntry(this.id).copyFrom(this)\n\t}\n\n\tcopyFrom(otherEntry) {\n\t\tthis.version = otherEntry.version\n\t\tthis.data.value = otherEntry.data.value\n\t\tthis.data.refs = otherEntry.data.refs\n\t\tthis.hasBeenRead = otherEntry.hasBeenRead\n\t\tthis.hasBeenWritten = otherEntry.hasBeenWritten\n\t\tthis.hasBeenCreated = otherEntry.hasBeenCreated\n\t\treturn this\n\t}\n\n\ttoAction(initialVersion) {\n\t\tconst result = {\n\t\t\tVarId: this.id.buffer,\n\t\t}\n\t\tconst refMessages = this.data.refs ? this.data.refs.map((ref) => ref.toMessage()) : []\n\n\t\tif (this.hasBeenRead && !this.hasBeenWritten) {\n\t\t\tresult.Read = {Version: this.version || initialVersion}\n\t\t} else if (this.hasBeenWritten && !this.hasBeenRead) {\n\t\t\tresult.Write = {Value: this.data.value, References: refMessages}\n\t\t} else if (this.hasBeenWritten && this.hasBeenRead) {\n\t\t\tresult.ReadWrite = {Version: this.version, Value: this.data.value, References: refMessages}\n\t\t} else if (this.hasBeenCreated) {\n\t\t\tresult.Create = {Value: this.data.value, References: refMessages}\n\t\t} else {\n\t\t\tthrow new Error(`No read or write has occurred on object ${this.id}, cannot form an action.`)\n\t\t}\n\t\treturn result\n\t}\n}\n\nclass CopyCache {\n\tconstructor(parentCache) {\n\t\tthis.parentCache = parentCache\n\t\tthis.objects = new Map()\n\t}\n\n\tget(id) {\n\t\tconst hashable = binaryToHex(id)\n\t\tif (!this.objects.has(hashable)) {\n\t\t\tthis.objects.set(hashable, this.parentCache.get(id).clone())\n\t\t}\n\t\treturn this.objects.get(hashable)\n\t}\n\n\tpromote(finalTxnId) {\n\t\tfor (let [, entry] of this.objects) {\n\t\t\tconst parentEntry = this.parentCache.get(entry.id)\n\t\t\tif (finalTxnId) {\n\t\t\t\t// if we are given a transaction id, then this promotion should be treated like a cache update from the server.\n\t\t\t\tif (entry.hasBeenCreated || entry.hasBeenWritten) {\n\t\t\t\t\tparentEntry.update(finalTxnId, entry.data.value, entry.data.refs)\n\t\t\t\t}\n\t\t\t} else {\n\t\t\t\t// otherwise, it's a nested transaction completing, so we do a full copy into the parent.\n\t\t\t\tparentEntry.copyFrom(entry)\n\t\t\t}\n\t\t}\n\t}\n\n\t// Returns an array of all the actions that have occurred on this cache.\n\tgetActions(namespace, cacheEntryFilter) {\n\t\tconst actions = []\n\t\t// the version to ask for if we don't currently have any data in the cache for an object.\n\t\tconst initialVersion = Uint64.from(0, 0, 0, 0, 0, 0, 0, 0).concat(namespace)\n\n\t\tfor (let [,cacheEntry] of this.objects) {\n\t\t\tif (cacheEntryFilter(cacheEntry)) {\n\t\t\t\tactions.push(cacheEntry.toAction(initialVersion))\n\t\t\t}\n\t\t}\n\n\t\treturn actions\n\t}\n\n\tgetTemporaryView() {\n\t\treturn new CopyCache(this)\n\t}\n}",
@@ -1860,7 +1816,7 @@
     "lineNumber": 1
   },
   {
-    "__docId__": 84,
+    "__docId__": 82,
     "kind": "variable",
     "name": "binaryToHex",
     "memberof": "src/objectcache.js",
@@ -1886,7 +1842,7 @@
     }
   },
   {
-    "__docId__": 85,
+    "__docId__": 83,
     "kind": "variable",
     "name": "TransactionRetryNeeded",
     "memberof": "src/objectcache.js",
@@ -1912,7 +1868,7 @@
     }
   },
   {
-    "__docId__": 86,
+    "__docId__": 84,
     "kind": "variable",
     "name": "Uint64",
     "memberof": "src/objectcache.js",
@@ -1938,7 +1894,7 @@
     }
   },
   {
-    "__docId__": 87,
+    "__docId__": 85,
     "kind": "variable",
     "name": "Ref",
     "memberof": "src/objectcache.js",
@@ -1964,7 +1920,7 @@
     }
   },
   {
-    "__docId__": 88,
+    "__docId__": 86,
     "kind": "variable",
     "name": "Goshawk",
     "memberof": "src/objectcache.js",
@@ -1990,7 +1946,7 @@
     }
   },
   {
-    "__docId__": 89,
+    "__docId__": 87,
     "kind": "function",
     "name": "checkRefs",
     "memberof": "src/objectcache.js",
@@ -2021,7 +1977,7 @@
     ]
   },
   {
-    "__docId__": 90,
+    "__docId__": 88,
     "kind": "class",
     "name": "ObjectCacheEntry",
     "memberof": "src/objectcache.js",
@@ -2043,7 +1999,7 @@
     "interface": false
   },
   {
-    "__docId__": 91,
+    "__docId__": 89,
     "kind": "constructor",
     "name": "constructor",
     "memberof": "src/objectcache.js~ObjectCacheEntry",
@@ -2071,7 +2027,7 @@
     ]
   },
   {
-    "__docId__": 92,
+    "__docId__": 90,
     "kind": "member",
     "name": "id",
     "memberof": "src/objectcache.js~ObjectCacheEntry",
@@ -2094,7 +2050,7 @@
     }
   },
   {
-    "__docId__": 93,
+    "__docId__": 91,
     "kind": "member",
     "name": "version",
     "memberof": "src/objectcache.js~ObjectCacheEntry",
@@ -2117,7 +2073,7 @@
     }
   },
   {
-    "__docId__": 94,
+    "__docId__": 92,
     "kind": "member",
     "name": "data",
     "memberof": "src/objectcache.js~ObjectCacheEntry",
@@ -2140,7 +2096,7 @@
     }
   },
   {
-    "__docId__": 95,
+    "__docId__": 93,
     "kind": "member",
     "name": "readOnlyData",
     "memberof": "src/objectcache.js~ObjectCacheEntry",
@@ -2163,7 +2119,7 @@
     }
   },
   {
-    "__docId__": 96,
+    "__docId__": 94,
     "kind": "member",
     "name": "hasBeenWritten",
     "memberof": "src/objectcache.js~ObjectCacheEntry",
@@ -2186,7 +2142,7 @@
     }
   },
   {
-    "__docId__": 97,
+    "__docId__": 95,
     "kind": "member",
     "name": "hasBeenRead",
     "memberof": "src/objectcache.js~ObjectCacheEntry",
@@ -2209,7 +2165,7 @@
     }
   },
   {
-    "__docId__": 98,
+    "__docId__": 96,
     "kind": "member",
     "name": "hasBeenCreated",
     "memberof": "src/objectcache.js~ObjectCacheEntry",
@@ -2232,7 +2188,7 @@
     }
   },
   {
-    "__docId__": 99,
+    "__docId__": 97,
     "kind": "method",
     "name": "update",
     "memberof": "src/objectcache.js~ObjectCacheEntry",
@@ -2272,7 +2228,7 @@
     ]
   },
   {
-    "__docId__": 100,
+    "__docId__": 98,
     "kind": "member",
     "name": "version",
     "memberof": "src/objectcache.js~ObjectCacheEntry",
@@ -2295,7 +2251,7 @@
     }
   },
   {
-    "__docId__": 101,
+    "__docId__": 99,
     "kind": "method",
     "name": "read",
     "memberof": "src/objectcache.js~ObjectCacheEntry",
@@ -2321,7 +2277,7 @@
     }
   },
   {
-    "__docId__": 102,
+    "__docId__": 100,
     "kind": "member",
     "name": "hasBeenRead",
     "memberof": "src/objectcache.js~ObjectCacheEntry",
@@ -2344,7 +2300,7 @@
     }
   },
   {
-    "__docId__": 103,
+    "__docId__": 101,
     "kind": "method",
     "name": "write",
     "memberof": "src/objectcache.js~ObjectCacheEntry",
@@ -2378,7 +2334,7 @@
     ]
   },
   {
-    "__docId__": 104,
+    "__docId__": 102,
     "kind": "member",
     "name": "hasBeenWritten",
     "memberof": "src/objectcache.js~ObjectCacheEntry",
@@ -2401,7 +2357,7 @@
     }
   },
   {
-    "__docId__": 105,
+    "__docId__": 103,
     "kind": "method",
     "name": "hasData",
     "memberof": "src/objectcache.js~ObjectCacheEntry",
@@ -2427,7 +2383,7 @@
     }
   },
   {
-    "__docId__": 106,
+    "__docId__": 104,
     "kind": "method",
     "name": "create",
     "memberof": "src/objectcache.js~ObjectCacheEntry",
@@ -2461,7 +2417,7 @@
     ]
   },
   {
-    "__docId__": 107,
+    "__docId__": 105,
     "kind": "member",
     "name": "hasBeenCreated",
     "memberof": "src/objectcache.js~ObjectCacheEntry",
@@ -2484,7 +2440,7 @@
     }
   },
   {
-    "__docId__": 108,
+    "__docId__": 106,
     "kind": "method",
     "name": "clone",
     "memberof": "src/objectcache.js~ObjectCacheEntry",
@@ -2510,7 +2466,7 @@
     }
   },
   {
-    "__docId__": 109,
+    "__docId__": 107,
     "kind": "method",
     "name": "copyFrom",
     "memberof": "src/objectcache.js~ObjectCacheEntry",
@@ -2543,7 +2499,7 @@
     }
   },
   {
-    "__docId__": 110,
+    "__docId__": 108,
     "kind": "member",
     "name": "version",
     "memberof": "src/objectcache.js~ObjectCacheEntry",
@@ -2566,7 +2522,7 @@
     }
   },
   {
-    "__docId__": 111,
+    "__docId__": 109,
     "kind": "member",
     "name": "hasBeenRead",
     "memberof": "src/objectcache.js~ObjectCacheEntry",
@@ -2589,7 +2545,7 @@
     }
   },
   {
-    "__docId__": 112,
+    "__docId__": 110,
     "kind": "member",
     "name": "hasBeenWritten",
     "memberof": "src/objectcache.js~ObjectCacheEntry",
@@ -2612,7 +2568,7 @@
     }
   },
   {
-    "__docId__": 113,
+    "__docId__": 111,
     "kind": "member",
     "name": "hasBeenCreated",
     "memberof": "src/objectcache.js~ObjectCacheEntry",
@@ -2635,7 +2591,7 @@
     }
   },
   {
-    "__docId__": 114,
+    "__docId__": 112,
     "kind": "method",
     "name": "toAction",
     "memberof": "src/objectcache.js~ObjectCacheEntry",
@@ -2668,7 +2624,7 @@
     }
   },
   {
-    "__docId__": 115,
+    "__docId__": 113,
     "kind": "class",
     "name": "CopyCache",
     "memberof": "src/objectcache.js",
@@ -2690,7 +2646,7 @@
     "interface": false
   },
   {
-    "__docId__": 116,
+    "__docId__": 114,
     "kind": "constructor",
     "name": "constructor",
     "memberof": "src/objectcache.js~CopyCache",
@@ -2718,7 +2674,7 @@
     ]
   },
   {
-    "__docId__": 117,
+    "__docId__": 115,
     "kind": "member",
     "name": "parentCache",
     "memberof": "src/objectcache.js~CopyCache",
@@ -2741,7 +2697,7 @@
     }
   },
   {
-    "__docId__": 118,
+    "__docId__": 116,
     "kind": "member",
     "name": "objects",
     "memberof": "src/objectcache.js~CopyCache",
@@ -2764,7 +2720,7 @@
     }
   },
   {
-    "__docId__": 119,
+    "__docId__": 117,
     "kind": "method",
     "name": "get",
     "memberof": "src/objectcache.js~CopyCache",
@@ -2797,7 +2753,7 @@
     }
   },
   {
-    "__docId__": 120,
+    "__docId__": 118,
     "kind": "method",
     "name": "promote",
     "memberof": "src/objectcache.js~CopyCache",
@@ -2825,7 +2781,7 @@
     ]
   },
   {
-    "__docId__": 121,
+    "__docId__": 119,
     "kind": "method",
     "name": "getActions",
     "memberof": "src/objectcache.js~CopyCache",
@@ -2864,7 +2820,7 @@
     }
   },
   {
-    "__docId__": 122,
+    "__docId__": 120,
     "kind": "method",
     "name": "getTemporaryView",
     "memberof": "src/objectcache.js~CopyCache",
@@ -2890,7 +2846,7 @@
     }
   },
   {
-    "__docId__": 123,
+    "__docId__": 121,
     "kind": "class",
     "name": "ObjectCache",
     "memberof": "src/objectcache.js",
@@ -2905,7 +2861,7 @@
     "interface": false
   },
   {
-    "__docId__": 124,
+    "__docId__": 122,
     "kind": "constructor",
     "name": "constructor",
     "memberof": "src/objectcache.js~ObjectCache",
@@ -2926,7 +2882,7 @@
     "params": []
   },
   {
-    "__docId__": 125,
+    "__docId__": 123,
     "kind": "member",
     "name": "objects",
     "memberof": "src/objectcache.js~ObjectCache",
@@ -2949,7 +2905,7 @@
     }
   },
   {
-    "__docId__": 126,
+    "__docId__": 124,
     "kind": "method",
     "name": "get",
     "memberof": "src/objectcache.js~ObjectCache",
@@ -2982,7 +2938,7 @@
     }
   },
   {
-    "__docId__": 127,
+    "__docId__": 125,
     "kind": "method",
     "name": "remove",
     "memberof": "src/objectcache.js~ObjectCache",
@@ -3010,7 +2966,7 @@
     ]
   },
   {
-    "__docId__": 128,
+    "__docId__": 126,
     "kind": "method",
     "name": "getTemporaryView",
     "memberof": "src/objectcache.js~ObjectCache",
@@ -3036,7 +2992,7 @@
     }
   },
   {
-    "__docId__": 129,
+    "__docId__": 127,
     "kind": "file",
     "name": "src/ref.js",
     "content": "const {binaryToHex} = require('./utils')\n\n/**\n * A Ref represents a pointer to an object in the database.\n * Each Ref also carries with it some capabilities that determine\n * which of the actions `read` and `write` can be done with that reference.\n *\n * You can get a Ref either by looking at the roots of the transaction,\n * creating a new object or reading it from an objects references with\n * {@link Transaction#read}.\n */\nclass Ref {\n\t/** @private */\n\tconstructor(varId, read, write) {\n\t\tif (varId instanceof Uint8Array == false) {\n\t\t\tthrow new TypeError(\"var id must be a uint8 array\")\n\t\t}\n\n\t\t/**\n\t\t * The goshawkdb id of the object this reference refers to.\n\t\t * @private\n\t\t */\n\t\tthis.varId = varId\n\n\t\t/**\n\t\t * Whether this reference can be used to read the object.\n\t\t * @type {boolean}\n\t\t */\n\t\tthis.read = read\n\t\t/**\n\t\t * Whether this reference can be used to write the object.\n\t\t * @type {boolean}\n\t\t */\n\t\tthis.write = write\n\t}\n\n\t/** @private */\n\tstatic fromCapRef(capability, varId) {\n\t\treturn new Ref(varId, capability.Read, capability.Write)\n\t}\n\n\t/** @private */\n\tstatic fromMessage(msg) {\n\t\treturn Ref.fromCapRef(msg.Capability, msg.VarId)\n\t}\n\n\t/**\n\t * Checks to see if this reference and the other reference\n\t * refer to the same object in the database.\n\t * @param {Ref} otherRef\n\t * @returns {boolean} true if the other reference points to the same object, false otherwise.\n\t */\n\tsameReferent(otherRef) {\n\t\treturn binaryToHex(this.varId) === binaryToHex(otherRef.varId)\n\t}\n\n\t/**\n\t * @returns {Ref} a new reference the same as this one, but that cannot be used to read.\n\t */\n\tdenyRead() {\n\t\treturn new Ref(this.varId, false, this.write)\n\t}\n\n\t/**\n\t * @returns {Ref} a new reference the same as this one, but that cannot be used to write.\n\t */\n\tdenyWrite() {\n\t\treturn new Ref(this.varId, this.read, false)\n\t}\n\n\t/** @returns {string} a representation of this reference.  String representations are for debug only and are not considered part of the public API. */\n\ttoString() {\n\t\treturn `{Ref ${binaryToHex(this.varId)} ${this.read ? 'r' : '-'}${this.write ? 'w' : '-'}}`\n\t}\n\n\t/** @private */\n\ttoMessage() {\n\t\treturn {VarId: this.varId.buffer, Capability: {Read: this.read, Write: this.write}}\n\t}\n}\n\nmodule.exports = Ref",
@@ -3047,7 +3003,7 @@
     "lineNumber": 1
   },
   {
-    "__docId__": 130,
+    "__docId__": 128,
     "kind": "variable",
     "name": "binaryToHex",
     "memberof": "src/ref.js",
@@ -3073,7 +3029,7 @@
     }
   },
   {
-    "__docId__": 131,
+    "__docId__": 129,
     "kind": "class",
     "name": "Ref",
     "memberof": "src/ref.js",
@@ -3088,7 +3044,7 @@
     "interface": false
   },
   {
-    "__docId__": 132,
+    "__docId__": 130,
     "kind": "constructor",
     "name": "constructor",
     "memberof": "src/ref.js~Ref",
@@ -3121,7 +3077,7 @@
     ]
   },
   {
-    "__docId__": 133,
+    "__docId__": 131,
     "kind": "member",
     "name": "varId",
     "memberof": "src/ref.js~Ref",
@@ -3137,7 +3093,7 @@
     }
   },
   {
-    "__docId__": 134,
+    "__docId__": 132,
     "kind": "member",
     "name": "read",
     "memberof": "src/ref.js~Ref",
@@ -3156,7 +3112,7 @@
     }
   },
   {
-    "__docId__": 135,
+    "__docId__": 133,
     "kind": "member",
     "name": "write",
     "memberof": "src/ref.js~Ref",
@@ -3175,7 +3131,7 @@
     }
   },
   {
-    "__docId__": 136,
+    "__docId__": 134,
     "kind": "method",
     "name": "fromCapRef",
     "memberof": "src/ref.js~Ref",
@@ -3207,7 +3163,7 @@
     }
   },
   {
-    "__docId__": 137,
+    "__docId__": 135,
     "kind": "method",
     "name": "fromMessage",
     "memberof": "src/ref.js~Ref",
@@ -3233,7 +3189,7 @@
     }
   },
   {
-    "__docId__": 138,
+    "__docId__": 136,
     "kind": "method",
     "name": "sameReferent",
     "memberof": "src/ref.js~Ref",
@@ -3272,7 +3228,7 @@
     }
   },
   {
-    "__docId__": 139,
+    "__docId__": 137,
     "kind": "method",
     "name": "denyRead",
     "memberof": "src/ref.js~Ref",
@@ -3300,7 +3256,7 @@
     }
   },
   {
-    "__docId__": 140,
+    "__docId__": 138,
     "kind": "method",
     "name": "denyWrite",
     "memberof": "src/ref.js~Ref",
@@ -3328,7 +3284,7 @@
     }
   },
   {
-    "__docId__": 141,
+    "__docId__": 139,
     "kind": "method",
     "name": "toString",
     "memberof": "src/ref.js~Ref",
@@ -3356,7 +3312,7 @@
     }
   },
   {
-    "__docId__": 142,
+    "__docId__": 140,
     "kind": "method",
     "name": "toMessage",
     "memberof": "src/ref.js~Ref",
@@ -3375,10 +3331,10 @@
     }
   },
   {
-    "__docId__": 143,
+    "__docId__": 141,
     "kind": "file",
     "name": "src/transaction.js",
-    "content": "const Ref = require('./ref')\nconst {TransactionRetryNeeded, CapabilityDenied} = require('./errors')\nconst {toArrayBuffer} = require('./utils')\n\n/**\n * A transaction represents an attempt to make a modification to the database.\n *\n * The code associated with it may be required to run multiple times before it\n * successfully completes.  Care must be taken to make sure this will not\n * break the client environment.\n *\n * Transactions are acquired by calling {@link Connection#transact}.\n */\nclass Transaction {\n\n\t/** @private */\n\tconstructor(connection, txnFn, onSuccess, onFail, parentCache) {\n\t\t/** @private */\n\t\tthis.onSuccess = onSuccess;\n\n\t\t/** @private */\n\t\tthis.onFail = onFail;\n\n\t\t/** @private */\n\t\tthis.shouldRetry = false\n\n\t\t/** @private */\n\t\tthis.hasCacheMissed = false\n\n\t\t/**\n\t\t * The roots that this client has access to.\n\t\t * @type {{string: Ref}}\n\t\t */\n\t\tthis.roots = connection.roots\n\n\t\t/** @private */\n\t\tthis.fn = txnFn\n\n\t\t/** @private */\n\t\tthis.connection = connection\n\n\t\t/** @private */\n\t\tthis.parentCache = parentCache\n\n\t\t/** @private */\n\t\tthis.cache = parentCache.getTemporaryView()\n\t}\n\n\t/**\n\t * Reads the value and references from an object pointed to by a Ref.\n\t * @param {Ref} ref a reference to the object to read from.\n\t * @returns {{value:ArrayBuffer, refs:Ref[]}}\n\t * @throws {CapabilityDenied} if ref does not have read capability.\n\t * @throws {TransactionRetryNeeded} if the object is not in cache. Do not catch this without rethrowing it.\n\t */\n\tread(ref) {\n\t\tif (ref instanceof Ref == false) {\n\t\t\tthrow new TypeError(`Can only read a reference; you tried to read from ${String(ref)}`)\n\t\t}\n\t\tif (!ref.read) {\n\t\t\tthrow new CapabilityDenied(`Unable to read using reference ${ref.toString()}, as it doesn't allow reads.`)\n\t\t}\n\t\tconst id = ref.varId\n\t\tconst cacheEntry = this.cache.get(id)\n\t\tif (cacheEntry.hasData() === false) {\n\t\t\tthis.hasCacheMissed = true\n\t\t}\n\t\treturn cacheEntry.read()\n\t}\n\n\t/**\n\t * Changes the value an dreferences of an object pointed to by a Ref.\n\t * @param {Ref} ref a reference to the object to be written.\n\t * @param {ArrayBuffer|Buffer|TypedArray} value the new value to be stored in the object.\n\t * @param {Ref[]} refs the references from this object to other objects.\n\t */\n\twrite(ref, value, refs) {\n\t\tif (ref instanceof Ref == false) {\n\t\t\tthrow new TypeError(`Can only write with a reference; you tried to write to ${String(ref)}.`)\n\t\t}\n\t\tif (!ref.write) {\n\t\t\tthrow new CapabilityDenied(`Unable to write using reference ${ref.toString()}, as it doesn't allow writes.`)\n\t\t}\n\t\tvalue = toArrayBuffer(value)\n\t\tconst id = ref.varId\n\t\tconst cacheEntry = this.cache.get(id)\n\t\tcacheEntry.write(value, refs)\n\t}\n\n\t/**\n\t * Creates a new object and returns the reference to it.\n\t * @param {ArrayBuffer|Buffer|TypedArray} value the value that the new object will be created with.\n\t * @param {Ref[]} refs the references that the new object will be created with.  This will default to the empty array.\n\t * @returns {Ref} a reference to the newly created object.\n\t */\n\tcreate(value, refs = []) {\n\t\tvalue = toArrayBuffer(value)\n\t\tconst newId = this.connection.getNewObjectId()\n\t\tconst cacheEntry = this.cache.get(newId)\n\t\tcacheEntry.create(value, refs)\n\t\treturn new Ref(new Uint8Array(newId), true, true)\n\t}\n\n\t/**\n\t * Stops the current transaction, and waits for any of the values that have been\n\t * read to change before rerunning.  No further transactions will be processed while\n\t * a transaction is waiting.\n\t *\n\t * Internally, this method throws a TransactionRetryNeeded error.  If you catch it\n\t * and do not rethrow it, you will stop the retry behaviour from working.\n\t *\n\t * @throws {TransactionRetryNeeded}\n\t */\n\tretry() {\n\t\tthis.shouldRetry = true\n\t\tthrow new TransactionRetryNeeded(\"Transaction code called retry.\")\n\t}\n\n\t/**\n\t * Runs a nested transaction inside this transaction.\n\t *\n\t * If a nested transaction fails, its modifications will not be seen by the parent transaction.\n\t *\n\t * @param {function} fn the transaction function.  This function may be run multiple times and should rethrow any TransactionRetryNeeded exceptions.\n\t * @returns {Promise<*, Error>} a promise that resolves to the result of the transaction function once the transaction submits or an error if it cannot.\n\t */\n\ttransact(fn) {\n\t\tif (fn instanceof Function === false) {\n\t\t\tthrow new TypeError(\"Transaction argument must be a function.\")\n\t\t}\n\t\tconst nestedTransaction = new Transaction(this.connection, fn, this.onSuccess, this.onFail, this.cache)\n\t\tthis.connection.currentTransaction = nestedTransaction\n\t\tlet resultPromise = undefined\n\t\ttry {\n\t\t\tresultPromise = Promise.resolve(fn(nestedTransaction))\n\t\t} catch (e) {\n\t\t\tif (e instanceof TransactionRetryNeeded) {\n\t\t\t\tthis.shouldRetry = true\n\t\t\t}\n\t\t\tthis.connection.currentTransaction = this\n\t\t\tthrow e\n\t\t}\n\n\t\treturn resultPromise\n\t\t\t.then((result) => {\n\t\t\t\tthis.connection.currentTransaction = this\n\t\t\t\tnestedTransaction.promoteCache(undefined)\n\t\t\t\treturn result\n\t\t\t})\n\t}\n\n\t// private API\n\n\t/** @private\n\t * Prepares this transaction to be run again.*/\n\treset() {\n\t\tthis.cache = this.parentCache.getTemporaryView()\n\t\tthis.shouldRetry = false\n\t\tthis.hasCacheMissed = false\n\t}\n\n\t/** @private\n\t * This transaction has completed successfully, notify the parent.*/\n\tpromoteCache(finalTxnId) {\n\t\tthis.cache.promote(finalTxnId)\n\t}\n\n\t/** @private */\n\ttoMessage(txnId) {\n\t\tconst anyChange = (entry) => entry.hasBeenCreated || entry.hasBeenWritten || entry.hasBeenRead\n\t\tconst justReads = (entry) => entry.hasBeenRead\n\t\tconst justCacheMisses = (entry) => entry.hasBeenRead && entry.hasData() === false\n\n\t\tlet filter = anyChange\n\t\tif (this.shouldRetry) {\n\t\t\tfilter = justReads\n\t\t} else if (this.hasCacheMissed) {\n\t\t\tfilter = justCacheMisses\n\t\t}\n\n\t\tconst actions = this.cache.getActions(this.connection.namespace, filter)\n\t\treturn {\n\t\t\tClientTxnSubmission: {\n\t\t\t\tId: txnId,\n\t\t\t\tRetry: this.shouldRetry,\n\t\t\t\tActions: actions\n\t\t\t}\n\t\t}\n\t}\n}\n\nmodule.exports = Transaction",
+    "content": "const Ref = require('./ref')\nconst {TransactionRetryNeeded, CapabilityDenied} = require('./errors')\nconst {toArrayBuffer} = require('./utils')\nconst Uint64 = require('./uint64')\n\n/** @private */\nconst nextNewObjectId = Uint64.from(0, 0, 0, 0, 0, 0, 0, 0)\n\n/** @private\n * Gets the object id to use for the next `txn.create` and increments the counter.\n * @returns {Uint8Array}\n */\nfunction getNewObjectId(namespace) {\n\tconst objId = nextNewObjectId.concat(namespace)\n\tnextNewObjectId.inc()\n\treturn new Uint8Array(objId)\n}\n\n/**\n * A transaction represents an attempt to make a modification to the database.\n *\n * The code associated with it may be required to run multiple times before it\n * successfully completes.  Care must be taken to make sure this will not\n * break the client environment.\n *\n * Transactions are acquired by calling {@link Connection#transact}.\n */\nclass Transaction {\n\n\t/** @private */\n\tconstructor(txnFn, {onSuccess, onFail}, roots, namespace, parentCache) {\n\t\t/** @private */\n\t\tthis.onSuccess = onSuccess;\n\n\t\t/** @private */\n\t\tthis.onFail = onFail;\n\n\t\t/** @private */\n\t\tthis.shouldRetry = false\n\n\t\t/** @private */\n\t\tthis.hasCacheMissed = false\n\n\t\t/** @private */\n\t\tthis.namespace = namespace\n\n\t\t/**\n\t\t * The roots that this client has access to.\n\t\t * @type {{string: Ref}}\n\t\t */\n\t\tthis.roots = roots\n\n\t\t/** @private */\n\t\tthis.fn = txnFn\n\n\t\t/** @private */\n\t\tthis.parentCache = parentCache\n\n\t\t/** @private */\n\t\tthis.cache = parentCache.getTemporaryView()\n\t}\n\n\t/**\n\t * Reads the value and references from an object pointed to by a Ref.\n\t * @param {Ref} ref a reference to the object to read from.\n\t * @returns {{value:ArrayBuffer, refs:Ref[]}}\n\t * @throws {CapabilityDenied} if ref does not have read capability.\n\t * @throws {TransactionRetryNeeded} if the object is not in cache. Do not catch this without rethrowing it.\n\t */\n\tread(ref) {\n\t\tif (ref instanceof Ref == false) {\n\t\t\tthrow new TypeError(`Can only read a reference; you tried to read from ${String(ref)}`)\n\t\t}\n\t\tif (!ref.read) {\n\t\t\tthrow new CapabilityDenied(`Unable to read using reference ${ref.toString()}, as it doesn't allow reads.`)\n\t\t}\n\t\tconst id = ref.varId\n\t\tconst cacheEntry = this.cache.get(id)\n\t\tif (cacheEntry.hasData() === false) {\n\t\t\tthis.hasCacheMissed = true\n\t\t}\n\t\treturn cacheEntry.read()\n\t}\n\n\t/**\n\t * Changes the value an dreferences of an object pointed to by a Ref.\n\t * @param {Ref} ref a reference to the object to be written.\n\t * @param {ArrayBuffer|Buffer|TypedArray} value the new value to be stored in the object.\n\t * @param {Ref[]} refs the references from this object to other objects.\n\t */\n\twrite(ref, value, refs) {\n\t\tif (ref instanceof Ref == false) {\n\t\t\tthrow new TypeError(`Can only write with a reference; you tried to write to ${String(ref)}.`)\n\t\t}\n\t\tif (!ref.write) {\n\t\t\tthrow new CapabilityDenied(`Unable to write using reference ${ref.toString()}, as it doesn't allow writes.`)\n\t\t}\n\t\tvalue = toArrayBuffer(value)\n\t\tconst id = ref.varId\n\t\tconst cacheEntry = this.cache.get(id)\n\t\tcacheEntry.write(value, refs)\n\t}\n\n\t/**\n\t * Creates a new object and returns the reference to it.\n\t * @param {ArrayBuffer|Buffer|TypedArray} value the value that the new object will be created with.\n\t * @param {Ref[]} refs the references that the new object will be created with.  This will default to the empty array.\n\t * @returns {Ref} a reference to the newly created object.\n\t */\n\tcreate(value, refs = []) {\n\t\tvalue = toArrayBuffer(value)\n\t\tconst newId = getNewObjectId(this.namespace)\n\t\tconst cacheEntry = this.cache.get(newId)\n\t\tcacheEntry.create(value, refs)\n\t\treturn new Ref(new Uint8Array(newId), true, true)\n\t}\n\n\t/**\n\t * Stops the current transaction, and waits for any of the values that have been\n\t * read to change before rerunning.  No further transactions will be processed while\n\t * a transaction is waiting.\n\t *\n\t * Internally, this method throws a TransactionRetryNeeded error.  If you catch it\n\t * and do not rethrow it, you will stop the retry behaviour from working.\n\t *\n\t * @throws {TransactionRetryNeeded}\n\t */\n\tretry() {\n\t\tthis.shouldRetry = true\n\t\tthrow new TransactionRetryNeeded(\"Transaction code called retry.\")\n\t}\n\n\t/**\n\t * Runs a nested transaction inside this transaction.\n\t *\n\t * If a nested transaction fails, its modifications will not be seen by the parent transaction.\n\t *\n\t * @param {function} fn the transaction function.  This function may be run multiple times and should rethrow any\n\t * \t\t\t\t\t\t\tTransactionRetryNeeded exceptions.\n\t * @returns {Promise<*, Error>} a promise that resolves to the result of the transaction function once the transaction\n\t * \t\t\t\t\t\t\tsubmits or an error if it cannot.\n\t */\n\ttransact(fn) {\n\t\tif (fn instanceof Function === false) {\n\t\t\tthrow new TypeError(\"Transaction argument must be a function.\")\n\t\t}\n\t\t// txnFn, {onSuccess, onFail}, roots, namespace, parentCache\n\t\tconst nestedTransaction = new Transaction(fn, {onSuccess: this.onSuccess, onFail: this.onFail}, this.roots, this.namespace, this.cache)\n\t\tlet resultPromise = undefined\n\t\ttry {\n\t\t\tresultPromise = Promise.resolve(fn(nestedTransaction))\n\t\t} catch (e) {\n\t\t\tif (e instanceof TransactionRetryNeeded) {\n\t\t\t\tthis.shouldRetry = true\n\t\t\t}\n\t\t\tthrow e\n\t\t}\n\n\t\treturn resultPromise\n\t\t\t.then((result) => {\n\t\t\t\tnestedTransaction.promoteCache(undefined)\n\t\t\t\treturn result\n\t\t\t})\n\t}\n\n\t// private API\n\n\t/** @private\n\t * Prepares this transaction to be run again.*/\n\treset() {\n\t\tthis.cache = this.parentCache.getTemporaryView()\n\t\tthis.shouldRetry = false\n\t\tthis.hasCacheMissed = false\n\t}\n\n\t/** @private\n\t * This transaction has completed successfully, notify the parent.*/\n\tpromoteCache(finalTxnId) {\n\t\tthis.cache.promote(finalTxnId)\n\t}\n\n\t/** @private */\n\ttoMessage(txnId) {\n\t\tconst anyChange = (entry) => entry.hasBeenCreated || entry.hasBeenWritten || entry.hasBeenRead\n\t\tconst justReads = (entry) => entry.hasBeenRead\n\t\tconst justCacheMisses = (entry) => entry.hasBeenRead && entry.hasData() === false\n\n\t\tlet filter = anyChange\n\t\tif (this.shouldRetry) {\n\t\t\tfilter = justReads\n\t\t} else if (this.hasCacheMissed) {\n\t\t\tfilter = justCacheMisses\n\t\t}\n\n\t\tconst actions = this.cache.getActions(this.namespace, filter)\n\t\treturn {\n\t\t\tClientTxnSubmission: {\n\t\t\t\tId: txnId,\n\t\t\t\tRetry: this.shouldRetry,\n\t\t\t\tActions: actions\n\t\t\t}\n\t\t}\n\t}\n}\n\nmodule.exports = Transaction",
     "static": true,
     "longname": "src/transaction.js",
     "access": null,
@@ -3386,7 +3342,7 @@
     "lineNumber": 1
   },
   {
-    "__docId__": 144,
+    "__docId__": 142,
     "kind": "variable",
     "name": "Ref",
     "memberof": "src/transaction.js",
@@ -3412,7 +3368,7 @@
     }
   },
   {
-    "__docId__": 145,
+    "__docId__": 143,
     "kind": "variable",
     "name": "TransactionRetryNeeded",
     "memberof": "src/transaction.js",
@@ -3438,7 +3394,7 @@
     }
   },
   {
-    "__docId__": 146,
+    "__docId__": 144,
     "kind": "variable",
     "name": "toArrayBuffer",
     "memberof": "src/transaction.js",
@@ -3464,7 +3420,90 @@
     }
   },
   {
+    "__docId__": 145,
+    "kind": "variable",
+    "name": "Uint64",
+    "memberof": "src/transaction.js",
+    "static": true,
+    "longname": "src/transaction.js~Uint64",
+    "access": null,
+    "export": false,
+    "importPath": "goshawkjs/src/transaction.js",
+    "importStyle": null,
+    "description": null,
+    "lineNumber": 4,
+    "undocument": true,
+    "unknown": [
+      {
+        "tagName": "@_undocument",
+        "tagValue": ""
+      }
+    ],
+    "type": {
+      "types": [
+        "*"
+      ]
+    }
+  },
+  {
+    "__docId__": 146,
+    "kind": "variable",
+    "name": "nextNewObjectId",
+    "memberof": "src/transaction.js",
+    "static": true,
+    "longname": "src/transaction.js~nextNewObjectId",
+    "access": "private",
+    "export": false,
+    "importPath": "goshawkjs/src/transaction.js",
+    "importStyle": null,
+    "description": null,
+    "lineNumber": 7,
+    "type": {
+      "types": [
+        "*"
+      ]
+    }
+  },
+  {
     "__docId__": 147,
+    "kind": "function",
+    "name": "getNewObjectId",
+    "memberof": "src/transaction.js",
+    "generator": false,
+    "async": false,
+    "static": true,
+    "longname": "src/transaction.js~getNewObjectId",
+    "access": "private",
+    "export": false,
+    "importPath": "goshawkjs/src/transaction.js",
+    "importStyle": null,
+    "description": null,
+    "lineNumber": 13,
+    "unknown": [
+      {
+        "tagName": "@returns",
+        "tagValue": "{Uint8Array}"
+      }
+    ],
+    "params": [
+      {
+        "name": "namespace",
+        "types": [
+          "*"
+        ]
+      }
+    ],
+    "return": {
+      "nullable": null,
+      "types": [
+        "Uint8Array"
+      ],
+      "spread": false,
+      "description": ""
+    }
+  },
+  {
+    "__docId__": 148,
     "kind": "class",
     "name": "Transaction",
     "memberof": "src/transaction.js",
@@ -3475,11 +3514,11 @@
     "importPath": "goshawkjs/src/transaction.js",
     "importStyle": "Transaction",
     "description": "A transaction represents an attempt to make a modification to the database.\n\nThe code associated with it may be required to run multiple times before it\nsuccessfully completes.  Care must be taken to make sure this will not\nbreak the client environment.\n\nTransactions are acquired by calling {@link Connection#transact}.",
-    "lineNumber": 14,
+    "lineNumber": 28,
     "interface": false
   },
   {
-    "__docId__": 148,
+    "__docId__": 149,
     "kind": "constructor",
     "name": "constructor",
     "memberof": "src/transaction.js~Transaction",
@@ -3489,14 +3528,8 @@
     "longname": "src/transaction.js~Transaction#constructor",
     "access": "private",
     "description": null,
-    "lineNumber": 17,
+    "lineNumber": 31,
     "params": [
-      {
-        "name": "connection",
-        "types": [
-          "*"
-        ]
-      },
       {
         "name": "txnFn",
         "types": [
@@ -3504,13 +3537,24 @@
         ]
       },
       {
-        "name": "onSuccess",
+        "name": "objectPattern1",
+        "types": [
+          "{\"onSuccess\": *, \"onFail\": *}"
+        ],
+        "defaultRaw": {
+          "onSuccess": null,
+          "onFail": null
+        },
+        "defaultValue": "{\"onSuccess\":null,\"onFail\":null}"
+      },
+      {
+        "name": "roots",
         "types": [
           "*"
         ]
       },
       {
-        "name": "onFail",
+        "name": "namespace",
         "types": [
           "*"
         ]
@@ -3524,7 +3568,7 @@
     ]
   },
   {
-    "__docId__": 149,
+    "__docId__": 150,
     "kind": "member",
     "name": "onSuccess",
     "memberof": "src/transaction.js~Transaction",
@@ -3532,23 +3576,7 @@
     "longname": "src/transaction.js~Transaction#onSuccess",
     "access": "private",
     "description": null,
-    "lineNumber": 19,
-    "type": {
-      "types": [
-        "*"
-      ]
-    }
-  },
-  {
-    "__docId__": 150,
-    "kind": "member",
-    "name": "onFail",
-    "memberof": "src/transaction.js~Transaction",
-    "static": false,
-    "longname": "src/transaction.js~Transaction#onFail",
-    "access": "private",
-    "description": null,
-    "lineNumber": 22,
+    "lineNumber": 33,
     "type": {
       "types": [
         "*"
@@ -3558,29 +3586,29 @@
   {
     "__docId__": 151,
     "kind": "member",
-    "name": "shouldRetry",
+    "name": "onFail",
     "memberof": "src/transaction.js~Transaction",
     "static": false,
-    "longname": "src/transaction.js~Transaction#shouldRetry",
+    "longname": "src/transaction.js~Transaction#onFail",
     "access": "private",
     "description": null,
-    "lineNumber": 25,
+    "lineNumber": 36,
     "type": {
       "types": [
-        "boolean"
+        "*"
       ]
     }
   },
   {
     "__docId__": 152,
     "kind": "member",
-    "name": "hasCacheMissed",
+    "name": "shouldRetry",
     "memberof": "src/transaction.js~Transaction",
     "static": false,
-    "longname": "src/transaction.js~Transaction#hasCacheMissed",
+    "longname": "src/transaction.js~Transaction#shouldRetry",
     "access": "private",
     "description": null,
-    "lineNumber": 28,
+    "lineNumber": 39,
     "type": {
       "types": [
         "boolean"
@@ -3590,13 +3618,45 @@
   {
     "__docId__": 153,
     "kind": "member",
+    "name": "hasCacheMissed",
+    "memberof": "src/transaction.js~Transaction",
+    "static": false,
+    "longname": "src/transaction.js~Transaction#hasCacheMissed",
+    "access": "private",
+    "description": null,
+    "lineNumber": 42,
+    "type": {
+      "types": [
+        "boolean"
+      ]
+    }
+  },
+  {
+    "__docId__": 154,
+    "kind": "member",
+    "name": "namespace",
+    "memberof": "src/transaction.js~Transaction",
+    "static": false,
+    "longname": "src/transaction.js~Transaction#namespace",
+    "access": "private",
+    "description": null,
+    "lineNumber": 45,
+    "type": {
+      "types": [
+        "*"
+      ]
+    }
+  },
+  {
+    "__docId__": 155,
+    "kind": "member",
     "name": "roots",
     "memberof": "src/transaction.js~Transaction",
     "static": false,
     "longname": "src/transaction.js~Transaction#roots",
     "access": null,
     "description": "The roots that this client has access to.",
-    "lineNumber": 34,
+    "lineNumber": 51,
     "type": {
       "nullable": null,
       "types": [
@@ -3607,7 +3667,7 @@
     }
   },
   {
-    "__docId__": 154,
+    "__docId__": 156,
     "kind": "member",
     "name": "fn",
     "memberof": "src/transaction.js~Transaction",
@@ -3615,39 +3675,7 @@
     "longname": "src/transaction.js~Transaction#fn",
     "access": "private",
     "description": null,
-    "lineNumber": 37,
-    "type": {
-      "types": [
-        "*"
-      ]
-    }
-  },
-  {
-    "__docId__": 155,
-    "kind": "member",
-    "name": "connection",
-    "memberof": "src/transaction.js~Transaction",
-    "static": false,
-    "longname": "src/transaction.js~Transaction#connection",
-    "access": "private",
-    "description": null,
-    "lineNumber": 40,
-    "type": {
-      "types": [
-        "*"
-      ]
-    }
-  },
-  {
-    "__docId__": 156,
-    "kind": "member",
-    "name": "parentCache",
-    "memberof": "src/transaction.js~Transaction",
-    "static": false,
-    "longname": "src/transaction.js~Transaction#parentCache",
-    "access": "private",
-    "description": null,
-    "lineNumber": 43,
+    "lineNumber": 54,
     "type": {
       "types": [
         "*"
@@ -3657,13 +3685,13 @@
   {
     "__docId__": 157,
     "kind": "member",
-    "name": "cache",
+    "name": "parentCache",
     "memberof": "src/transaction.js~Transaction",
     "static": false,
-    "longname": "src/transaction.js~Transaction#cache",
+    "longname": "src/transaction.js~Transaction#parentCache",
     "access": "private",
     "description": null,
-    "lineNumber": 46,
+    "lineNumber": 57,
     "type": {
       "types": [
         "*"
@@ -3672,6 +3700,22 @@
   },
   {
     "__docId__": 158,
+    "kind": "member",
+    "name": "cache",
+    "memberof": "src/transaction.js~Transaction",
+    "static": false,
+    "longname": "src/transaction.js~Transaction#cache",
+    "access": "private",
+    "description": null,
+    "lineNumber": 60,
+    "type": {
+      "types": [
+        "*"
+      ]
+    }
+  },
+  {
+    "__docId__": 159,
     "kind": "method",
     "name": "read",
     "memberof": "src/transaction.js~Transaction",
@@ -3681,7 +3725,7 @@
     "longname": "src/transaction.js~Transaction#read",
     "access": null,
     "description": "Reads the value and references from an object pointed to by a Ref.",
-    "lineNumber": 56,
+    "lineNumber": 70,
     "unknown": [
       {
         "tagName": "@returns",
@@ -3724,7 +3768,7 @@
     ]
   },
   {
-    "__docId__": 159,
+    "__docId__": 160,
     "kind": "member",
     "name": "hasCacheMissed",
     "memberof": "src/transaction.js~Transaction",
@@ -3732,7 +3776,7 @@
     "longname": "src/transaction.js~Transaction#hasCacheMissed",
     "access": null,
     "description": null,
-    "lineNumber": 66,
+    "lineNumber": 80,
     "undocument": true,
     "unknown": [
       {
@@ -3747,7 +3791,7 @@
     }
   },
   {
-    "__docId__": 160,
+    "__docId__": 161,
     "kind": "method",
     "name": "write",
     "memberof": "src/transaction.js~Transaction",
@@ -3757,7 +3801,7 @@
     "longname": "src/transaction.js~Transaction#write",
     "access": null,
     "description": "Changes the value an dreferences of an object pointed to by a Ref.",
-    "lineNumber": 77,
+    "lineNumber": 91,
     "params": [
       {
         "nullable": null,
@@ -3794,7 +3838,7 @@
     ]
   },
   {
-    "__docId__": 161,
+    "__docId__": 162,
     "kind": "method",
     "name": "create",
     "memberof": "src/transaction.js~Transaction",
@@ -3804,7 +3848,7 @@
     "longname": "src/transaction.js~Transaction#create",
     "access": null,
     "description": "Creates a new object and returns the reference to it.",
-    "lineNumber": 96,
+    "lineNumber": 110,
     "unknown": [
       {
         "tagName": "@returns",
@@ -3845,7 +3889,7 @@
     }
   },
   {
-    "__docId__": 162,
+    "__docId__": 163,
     "kind": "method",
     "name": "retry",
     "memberof": "src/transaction.js~Transaction",
@@ -3855,7 +3899,7 @@
     "longname": "src/transaction.js~Transaction#retry",
     "access": null,
     "description": "Stops the current transaction, and waits for any of the values that have been\nread to change before rerunning.  No further transactions will be processed while\na transaction is waiting.\n\nInternally, this method throws a TransactionRetryNeeded error.  If you catch it\nand do not rethrow it, you will stop the retry behaviour from working.",
-    "lineNumber": 114,
+    "lineNumber": 128,
     "params": [],
     "throws": [
       {
@@ -3867,7 +3911,7 @@
     ]
   },
   {
-    "__docId__": 163,
+    "__docId__": 164,
     "kind": "member",
     "name": "shouldRetry",
     "memberof": "src/transaction.js~Transaction",
@@ -3875,7 +3919,7 @@
     "longname": "src/transaction.js~Transaction#shouldRetry",
     "access": null,
     "description": null,
-    "lineNumber": 115,
+    "lineNumber": 129,
     "undocument": true,
     "unknown": [
       {
@@ -3890,7 +3934,7 @@
     }
   },
   {
-    "__docId__": 164,
+    "__docId__": 165,
     "kind": "method",
     "name": "transact",
     "memberof": "src/transaction.js~Transaction",
@@ -3900,11 +3944,11 @@
     "longname": "src/transaction.js~Transaction#transact",
     "access": null,
     "description": "Runs a nested transaction inside this transaction.\n\nIf a nested transaction fails, its modifications will not be seen by the parent transaction.",
-    "lineNumber": 127,
+    "lineNumber": 143,
     "unknown": [
       {
         "tagName": "@returns",
-        "tagValue": "{Promise<*, Error>} a promise that resolves to the result of the transaction function once the transaction submits or an error if it cannot."
+        "tagValue": "{Promise<*, Error>} a promise that resolves to the result of the transaction function once the transaction\n\t\t\t\t\t\t\tsubmits or an error if it cannot."
       }
     ],
     "params": [
@@ -3916,7 +3960,7 @@
         "spread": false,
         "optional": false,
         "name": "fn",
-        "description": "the transaction function.  This function may be run multiple times and should rethrow any TransactionRetryNeeded exceptions."
+        "description": "the transaction function.  This function may be run multiple times and should rethrow any\n\t\t\t\t\t\t\tTransactionRetryNeeded exceptions."
       }
     ],
     "return": {
@@ -3925,11 +3969,11 @@
         "Promise<*, Error>"
       ],
       "spread": false,
-      "description": "a promise that resolves to the result of the transaction function once the transaction submits or an error if it cannot."
+      "description": "a promise that resolves to the result of the transaction function once the transaction\n\t\t\t\t\t\t\tsubmits or an error if it cannot."
     }
   },
   {
-    "__docId__": 165,
+    "__docId__": 166,
     "kind": "member",
     "name": "shouldRetry",
     "memberof": "src/transaction.js~Transaction",
@@ -3937,7 +3981,7 @@
     "longname": "src/transaction.js~Transaction#shouldRetry",
     "access": null,
     "description": null,
-    "lineNumber": 138,
+    "lineNumber": 154,
     "undocument": true,
     "unknown": [
       {
@@ -3952,7 +3996,7 @@
     }
   },
   {
-    "__docId__": 166,
+    "__docId__": 167,
     "kind": "method",
     "name": "reset",
     "memberof": "src/transaction.js~Transaction",
@@ -3962,11 +4006,11 @@
     "longname": "src/transaction.js~Transaction#reset",
     "access": "private",
     "description": null,
-    "lineNumber": 156,
+    "lineNumber": 170,
     "params": []
   },
   {
-    "__docId__": 167,
+    "__docId__": 168,
     "kind": "member",
     "name": "cache",
     "memberof": "src/transaction.js~Transaction",
@@ -3974,7 +4018,7 @@
     "longname": "src/transaction.js~Transaction#cache",
     "access": null,
     "description": null,
-    "lineNumber": 157,
+    "lineNumber": 171,
     "undocument": true,
     "unknown": [
       {
@@ -3989,7 +4033,7 @@
     }
   },
   {
-    "__docId__": 168,
+    "__docId__": 169,
     "kind": "member",
     "name": "shouldRetry",
     "memberof": "src/transaction.js~Transaction",
@@ -3997,30 +4041,7 @@
     "longname": "src/transaction.js~Transaction#shouldRetry",
     "access": null,
     "description": null,
-    "lineNumber": 158,
-    "undocument": true,
-    "unknown": [
-      {
-        "tagName": "@_undocument",
-        "tagValue": ""
-      }
-    ],
-    "type": {
-      "types": [
-        "boolean"
-      ]
-    }
-  },
-  {
-    "__docId__": 169,
-    "kind": "member",
-    "name": "hasCacheMissed",
-    "memberof": "src/transaction.js~Transaction",
-    "static": false,
-    "longname": "src/transaction.js~Transaction#hasCacheMissed",
-    "access": null,
-    "description": null,
-    "lineNumber": 159,
+    "lineNumber": 172,
     "undocument": true,
     "unknown": [
       {
@@ -4036,6 +4057,29 @@
   },
   {
     "__docId__": 170,
+    "kind": "member",
+    "name": "hasCacheMissed",
+    "memberof": "src/transaction.js~Transaction",
+    "static": false,
+    "longname": "src/transaction.js~Transaction#hasCacheMissed",
+    "access": null,
+    "description": null,
+    "lineNumber": 173,
+    "undocument": true,
+    "unknown": [
+      {
+        "tagName": "@_undocument",
+        "tagValue": ""
+      }
+    ],
+    "type": {
+      "types": [
+        "boolean"
+      ]
+    }
+  },
+  {
+    "__docId__": 171,
     "kind": "method",
     "name": "promoteCache",
     "memberof": "src/transaction.js~Transaction",
@@ -4045,7 +4089,7 @@
     "longname": "src/transaction.js~Transaction#promoteCache",
     "access": "private",
     "description": null,
-    "lineNumber": 164,
+    "lineNumber": 178,
     "params": [
       {
         "name": "finalTxnId",
@@ -4056,7 +4100,7 @@
     ]
   },
   {
-    "__docId__": 171,
+    "__docId__": 172,
     "kind": "method",
     "name": "toMessage",
     "memberof": "src/transaction.js~Transaction",
@@ -4066,7 +4110,7 @@
     "longname": "src/transaction.js~Transaction#toMessage",
     "access": "private",
     "description": null,
-    "lineNumber": 169,
+    "lineNumber": 183,
     "params": [
       {
         "name": "txnId",
@@ -4082,7 +4126,7 @@
     }
   },
   {
-    "__docId__": 172,
+    "__docId__": 173,
     "kind": "file",
     "name": "src/uint64.js",
     "content": "const {binaryToHex, toArrayBuffer} = require('./utils')\n\n/**\n * A representation of a Uint64, since otherwise javascript can't do them.\n */\nclass Uint64 {\n\t/**\n\t * Makes a new Uint64 from a Uint8Array\n\t * @param {Uint8Array} uintArray an array of bytes to be used to represent this 64 bit integer.\n\t */\n\tconstructor(uintArray = new Uint8Array(8)) {\n\t\tif (uintArray instanceof Uint8Array === false) {\n\t\t\tthrow new TypeError(\"Uint64 source must be a Uint8Array, Uint64.from(bytes), Uint64.fromTypedArray, Uint64.fromArrayBuffer might suit your needs better.\")\n\t\t}\n\t\t/**\n\t\t * @private\n\t\t * @type {Uint8Array}\n\t\t */\n\t\tthis.data = uintArray\n\n\t\t/**\n\t\t * An arraybuffer representation of this value.\n\t\t * @type {ArrayBuffer}\n\t\t */\n\t\tthis.buffer = this.data.buffer\n\t}\n\n\t/**\n\t * Creates a Uint64 from bytes\n\t * @param {number[]} bytes\n\t * @returns {Uint64}\n\t */\n\tstatic from(...bytes) {\n\t\tconst result = new Uint64()\n\t\tresult.set(...bytes)\n\t\treturn result\n\t}\n\n\t/**\n\t * Creates a Uint64 from the first 8 bytes of one of the binary forms.\n\t * @param {ArrayBuffer|Buffer|TypedArray} binary\n\t * @returns {Uint64}\n\t */\n\tstatic fromBinary(binary) {\n\t\treturn Uint64.fromArrayBuffer(toArrayBuffer(binary))\n\t}\n\n\t/**\n\t * Creates a Uint64 from an array buffer. Potentially with a byte offset.\n\t * Only the first 8 bytes will be taken.\n\t * @param {ArrayBuffer} arrayBuffer\n\t * @param {number} byteOffset the starting position in the array buffer. Defaults to 0.\n\t * @returns {Uint64}\n\t */\n\tstatic fromArrayBuffer(arrayBuffer, byteOffset = 0) {\n\t\treturn new Uint64(new Uint8Array(arrayBuffer.slice(byteOffset, byteOffset + 8)))\n\t}\n\n\t/**\n\t * Modifies this Uint64 to represent the succeeding integer.  If\n\t * this represents the largest integer the Uint64 can represent, it will wrap to 0.\n\t * @returns {Uint64} this, modified Uint64.\n\t */\n\tinc() {\n\t\tfor (let idx = this.data.length - 1; idx >= 0; --idx) {\n\t\t\tthis.data[idx] += 1\n\t\t\tif (this.data[idx] != 0) {\n\t\t\t\tbreak\n\t\t\t}\n\t\t}\n\t\treturn this\n\t}\n\n\t/**\n\t * @returns {Uint64} a copy of this Uint64.\n\t */\n\tclone() {\n\t\tconst dst = new ArrayBuffer(this.data.byteLength)\n\t\tconst uintArray = new Uint8Array(dst)\n\t\tuintArray.set(this.data)\n\t\treturn new Uint64(uintArray)\n\t}\n\n\t/**\n\t * Set the last last bytes.length bytes.\n\t * @param {number[]} bytes the bytes to set.\n\t */\n\tset(...bytes) {\n\t\tif (bytes[0] instanceof Uint64) {\n\t\t\tthis.data.set(bytes[0].data, 0)\n\t\t} else {\n\t\t\tfor (let i = 0; i < bytes.length; ++i) {\n\t\t\t\tthis.data[this.data.length - bytes.length + i] = bytes[i]\n\t\t\t}\n\t\t}\n\t}\n\n\t/**\n\t * Returns an array buffer where this Uint64 is the first 8 bytes and\n\t * the passed buffer is the subsequent bytes.\n\t * @param {ArrayBuffer|Buffer|TypedArray} buffer the subsequent bytes.\n\t * @returns {ArrayBuffer}\n\t */\n\tconcat(buffer) {\n\t\tbuffer = toArrayBuffer(buffer)\n\t\tconst result = new Uint8Array(this.data.length + buffer.byteLength)\n\t\tresult.set(this.data, 0)\n\t\tresult.set(new Uint8Array(buffer), this.data.length)\n\t\treturn result.buffer\n\t}\n\n\t/**\n\t * A string representation of this Uint64.  This string representation is for debugging purposes\n\t * and does not form part of the public API.\n\t */\n\ttoString() {\n\t\treturn binaryToHex(this.data)\n\t}\n}\n\nmodule.exports = Uint64",
@@ -4093,7 +4137,7 @@
     "lineNumber": 1
   },
   {
-    "__docId__": 173,
+    "__docId__": 174,
     "kind": "variable",
     "name": "binaryToHex",
     "memberof": "src/uint64.js",
@@ -4119,7 +4163,7 @@
     }
   },
   {
-    "__docId__": 174,
+    "__docId__": 175,
     "kind": "class",
     "name": "Uint64",
     "memberof": "src/uint64.js",
@@ -4134,7 +4178,7 @@
     "interface": false
   },
   {
-    "__docId__": 175,
+    "__docId__": 176,
     "kind": "constructor",
     "name": "constructor",
     "memberof": "src/uint64.js~Uint64",
@@ -4159,7 +4203,7 @@
     ]
   },
   {
-    "__docId__": 176,
+    "__docId__": 177,
     "kind": "member",
     "name": "data",
     "memberof": "src/uint64.js~Uint64",
@@ -4178,7 +4222,7 @@
     }
   },
   {
-    "__docId__": 177,
+    "__docId__": 178,
     "kind": "member",
     "name": "buffer",
     "memberof": "src/uint64.js~Uint64",
@@ -4197,7 +4241,7 @@
     }
   },
   {
-    "__docId__": 178,
+    "__docId__": 179,
     "kind": "method",
     "name": "from",
     "memberof": "src/uint64.js~Uint64",
@@ -4236,7 +4280,7 @@
     }
   },
   {
-    "__docId__": 179,
+    "__docId__": 180,
     "kind": "method",
     "name": "fromBinary",
     "memberof": "src/uint64.js~Uint64",
@@ -4277,7 +4321,7 @@
     }
   },
   {
-    "__docId__": 180,
+    "__docId__": 181,
     "kind": "method",
     "name": "fromArrayBuffer",
     "memberof": "src/uint64.js~Uint64",
@@ -4326,7 +4370,7 @@
     }
   },
   {
-    "__docId__": 181,
+    "__docId__": 182,
     "kind": "method",
     "name": "inc",
     "memberof": "src/uint64.js~Uint64",
@@ -4354,7 +4398,7 @@
     }
   },
   {
-    "__docId__": 182,
+    "__docId__": 183,
     "kind": "method",
     "name": "clone",
     "memberof": "src/uint64.js~Uint64",
@@ -4382,7 +4426,7 @@
     }
   },
   {
-    "__docId__": 183,
+    "__docId__": 184,
     "kind": "method",
     "name": "set",
     "memberof": "src/uint64.js~Uint64",
@@ -4407,7 +4451,7 @@
     ]
   },
   {
-    "__docId__": 184,
+    "__docId__": 185,
     "kind": "method",
     "name": "concat",
     "memberof": "src/uint64.js~Uint64",
@@ -4448,7 +4492,7 @@
     }
   },
   {
-    "__docId__": 185,
+    "__docId__": 186,
     "kind": "method",
     "name": "toString",
     "memberof": "src/uint64.js~Uint64",
@@ -4467,7 +4511,7 @@
     }
   },
   {
-    "__docId__": 186,
+    "__docId__": 187,
     "kind": "file",
     "name": "src/utils.js",
     "content": "/**\n * @param {ArrayBuffer|Buffer|TypedArray} binary the binary we want to represent in hex.\n * @returns {string} a hexadecimal representation of this binary.\n */\nexports.binaryToHex = function binaryToHex(binary) {\n\tlet uintarray = null\n\tif (binary instanceof Uint8Array) {\n\t\tuintarray = binary\n\t} else {\n\t\tuintarray = new Uint8Array(toArrayBuffer(binary))\n\t}\n\treturn \"0x\" + Array.from(uintarray).map((x) => ('0' + x.toString(16)).substr(-2)).join(\"\")\n}\n\n/**\n * Tries to convert a binary value into an array buffer.\n * @param {ArrayBuffer|Buffer|TypedArray} value the value to convert.\n * @returns {ArrayBuffer}\n */\nexports.toArrayBuffer = function toArrayBuffer(value) {\n\tif (value instanceof ArrayBuffer) {\n\t\treturn value\n\t} else if (value instanceof Buffer) {\n\t\treturn value.buffer.slice(value.offset, value.offset + value.length)\n\t} else if (value instanceof ArrayBuffer === false && value.buffer && value.buffer instanceof ArrayBuffer) {\n\t\treturn value.buffer\n\t}\n\tthrow new TypeError(\"Unable to convert value to array buffer \" + value)\n}\n\n/**\n * Runs the provided function, and wraps the output or thrown error in a promise.\n * This is useful for writing code that deals with functions that may be either synchronous or\n * asynchronous.\n * @param {function} fn the function that will be evaluated to populate the promise.\n * @returns {Promise}\n */\nexports.asPromise = function asPromise(fn) {\n\ttry {\n\t\treturn Promise.resolve(fn())\n\t} catch (e) {\n\t\treturn Promise.reject(e)\n\t}\n}",
@@ -4478,7 +4522,7 @@
     "lineNumber": 1
   },
   {
-    "__docId__": 187,
+    "__docId__": 188,
     "kind": "function",
     "name": "binaryToHex",
     "memberof": "src/utils.js",
@@ -4522,7 +4566,7 @@
     }
   },
   {
-    "__docId__": 188,
+    "__docId__": 189,
     "kind": "function",
     "name": "toArrayBuffer",
     "memberof": "src/utils.js",
@@ -4566,7 +4610,7 @@
     }
   },
   {
-    "__docId__": 189,
+    "__docId__": 190,
     "kind": "function",
     "name": "asPromise",
     "memberof": "src/utils.js",
@@ -4608,7 +4652,7 @@
     }
   },
   {
-    "__docId__": 191,
+    "__docId__": 192,
     "kind": "external",
     "name": "Infinity",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Infinity",
@@ -4620,7 +4664,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 192,
+    "__docId__": 193,
     "kind": "external",
     "name": "NaN",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/NaN",
@@ -4632,7 +4676,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 193,
+    "__docId__": 194,
     "kind": "external",
     "name": "undefined",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/undefined",
@@ -4644,7 +4688,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 194,
+    "__docId__": 195,
     "kind": "external",
     "name": "null",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/null",
@@ -4656,7 +4700,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 195,
+    "__docId__": 196,
     "kind": "external",
     "name": "Object",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object",
@@ -4668,7 +4712,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 196,
+    "__docId__": 197,
     "kind": "external",
     "name": "object",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object",
@@ -4680,7 +4724,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 197,
+    "__docId__": 198,
     "kind": "external",
     "name": "Function",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Function",
@@ -4692,7 +4736,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 198,
+    "__docId__": 199,
     "kind": "external",
     "name": "function",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Function",
@@ -4704,7 +4748,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 199,
+    "__docId__": 200,
     "kind": "external",
     "name": "Boolean",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Boolean",
@@ -4716,7 +4760,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 200,
+    "__docId__": 201,
     "kind": "external",
     "name": "boolean",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Boolean",
@@ -4728,7 +4772,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 201,
+    "__docId__": 202,
     "kind": "external",
     "name": "Symbol",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Symbol",
@@ -4740,7 +4784,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 202,
+    "__docId__": 203,
     "kind": "external",
     "name": "Error",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Error",
@@ -4752,7 +4796,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 203,
+    "__docId__": 204,
     "kind": "external",
     "name": "EvalError",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/EvalError",
@@ -4764,7 +4808,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 204,
+    "__docId__": 205,
     "kind": "external",
     "name": "InternalError",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/InternalError",
@@ -4776,7 +4820,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 205,
+    "__docId__": 206,
     "kind": "external",
     "name": "RangeError",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/RangeError",
@@ -4788,7 +4832,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 206,
+    "__docId__": 207,
     "kind": "external",
     "name": "ReferenceError",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/ReferenceError",
@@ -4800,7 +4844,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 207,
+    "__docId__": 208,
     "kind": "external",
     "name": "SyntaxError",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/SyntaxError",
@@ -4812,7 +4856,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 208,
+    "__docId__": 209,
     "kind": "external",
     "name": "TypeError",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/TypeError",
@@ -4824,7 +4868,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 209,
+    "__docId__": 210,
     "kind": "external",
     "name": "URIError",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/URIError",
@@ -4836,7 +4880,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 210,
+    "__docId__": 211,
     "kind": "external",
     "name": "Number",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Number",
@@ -4848,7 +4892,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 211,
+    "__docId__": 212,
     "kind": "external",
     "name": "number",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Number",
@@ -4860,7 +4904,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 212,
+    "__docId__": 213,
     "kind": "external",
     "name": "Date",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Date",
@@ -4872,7 +4916,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 213,
+    "__docId__": 214,
     "kind": "external",
     "name": "String",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String",
@@ -4884,7 +4928,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 214,
+    "__docId__": 215,
     "kind": "external",
     "name": "string",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String",
@@ -4896,7 +4940,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 215,
+    "__docId__": 216,
     "kind": "external",
     "name": "RegExp",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/RegExp",
@@ -4908,7 +4952,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 216,
+    "__docId__": 217,
     "kind": "external",
     "name": "Array",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array",
@@ -4920,7 +4964,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 217,
+    "__docId__": 218,
     "kind": "external",
     "name": "Int8Array",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Int8Array",
@@ -4932,7 +4976,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 218,
+    "__docId__": 219,
     "kind": "external",
     "name": "Uint8Array",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Uint8Array",
@@ -4944,7 +4988,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 219,
+    "__docId__": 220,
     "kind": "external",
     "name": "Uint8ClampedArray",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Uint8ClampedArray",
@@ -4956,7 +5000,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 220,
+    "__docId__": 221,
     "kind": "external",
     "name": "Int16Array",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Int16Array",
@@ -4968,7 +5012,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 221,
+    "__docId__": 222,
     "kind": "external",
     "name": "Uint16Array",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Uint16Array",
@@ -4980,7 +5024,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 222,
+    "__docId__": 223,
     "kind": "external",
     "name": "Int32Array",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Int32Array",
@@ -4992,7 +5036,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 223,
+    "__docId__": 224,
     "kind": "external",
     "name": "Uint32Array",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Uint32Array",
@@ -5004,7 +5048,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 224,
+    "__docId__": 225,
     "kind": "external",
     "name": "Float32Array",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Float32Array",
@@ -5016,7 +5060,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 225,
+    "__docId__": 226,
     "kind": "external",
     "name": "Float64Array",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Float64Array",
@@ -5028,7 +5072,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 226,
+    "__docId__": 227,
     "kind": "external",
     "name": "Map",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map",
@@ -5040,7 +5084,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 227,
+    "__docId__": 228,
     "kind": "external",
     "name": "Set",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Set",
@@ -5052,7 +5096,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 228,
+    "__docId__": 229,
     "kind": "external",
     "name": "WeakMap",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/WeakMap",
@@ -5064,7 +5108,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 229,
+    "__docId__": 230,
     "kind": "external",
     "name": "WeakSet",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/WeakSet",
@@ -5076,7 +5120,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 230,
+    "__docId__": 231,
     "kind": "external",
     "name": "ArrayBuffer",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/ArrayBuffer",
@@ -5088,7 +5132,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 231,
+    "__docId__": 232,
     "kind": "external",
     "name": "DataView",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/DataView",
@@ -5100,7 +5144,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 232,
+    "__docId__": 233,
     "kind": "external",
     "name": "JSON",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/JSON",
@@ -5112,7 +5156,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 233,
+    "__docId__": 234,
     "kind": "external",
     "name": "Promise",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise",
@@ -5124,7 +5168,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 234,
+    "__docId__": 235,
     "kind": "external",
     "name": "Generator",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Generator",
@@ -5136,7 +5180,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 235,
+    "__docId__": 236,
     "kind": "external",
     "name": "GeneratorFunction",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/GeneratorFunction",
@@ -5148,7 +5192,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 236,
+    "__docId__": 237,
     "kind": "external",
     "name": "Reflect",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Reflect",
@@ -5160,7 +5204,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 237,
+    "__docId__": 238,
     "kind": "external",
     "name": "Proxy",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Proxy",
@@ -5173,7 +5217,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 239,
+    "__docId__": 240,
     "kind": "external",
     "name": "CanvasRenderingContext2D",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D",
@@ -5185,7 +5229,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 240,
+    "__docId__": 241,
     "kind": "external",
     "name": "DocumentFragment",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/API/DocumentFragment",
@@ -5197,7 +5241,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 241,
+    "__docId__": 242,
     "kind": "external",
     "name": "Element",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/API/Element",
@@ -5209,7 +5253,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 242,
+    "__docId__": 243,
     "kind": "external",
     "name": "Event",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/API/Event",
@@ -5221,7 +5265,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 243,
+    "__docId__": 244,
     "kind": "external",
     "name": "Node",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/API/Node",
@@ -5233,7 +5277,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 244,
+    "__docId__": 245,
     "kind": "external",
     "name": "NodeList",
     "externalLink": "https://developer.mozilla.org/en-US/docs/Web/API/NodeList",
@@ -5245,7 +5289,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 245,
+    "__docId__": 246,
     "kind": "external",
     "name": "XMLHttpRequest",
     "externalLink": "https://developer.mozilla.org/en/docs/Web/API/XMLHttpRequest",
@@ -5257,7 +5301,7 @@
     "builtinExternal": true
   },
   {
-    "__docId__": 246,
+    "__docId__": 247,
     "kind": "external",
     "name": "AudioContext",
     "externalLink": "https://developer.mozilla.org/en/docs/Web/API/AudioContext",

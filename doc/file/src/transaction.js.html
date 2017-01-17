@@ -53,6 +53,20 @@
 <pre class="source-code line-number raw-source-code"><code class="prettyprint linenums" data-ice="content">const Ref = require(&apos;./ref&apos;)
 const {TransactionRetryNeeded, CapabilityDenied} = require(&apos;./errors&apos;)
 const {toArrayBuffer} = require(&apos;./utils&apos;)
+const Uint64 = require(&apos;./uint64&apos;)
+
+/** @private */
+const nextNewObjectId = Uint64.from(0, 0, 0, 0, 0, 0, 0, 0)
+
+/** @private
+ * Gets the object id to use for the next `txn.create` and increments the counter.
+ * @returns {Uint8Array}
+ */
+function getNewObjectId(namespace) {
+	const objId = nextNewObjectId.concat(namespace)
+	nextNewObjectId.inc()
+	return new Uint8Array(objId)
+}
 
 /**
  * A transaction represents an attempt to make a modification to the database.
@@ -66,7 +80,7 @@ const {toArrayBuffer} = require(&apos;./utils&apos;)
 class Transaction {
 
 	/** @private */
-	constructor(connection, txnFn, onSuccess, onFail, parentCache) {
+	constructor(txnFn, {onSuccess, onFail}, roots, namespace, parentCache) {
 		/** @private */
 		this.onSuccess = onSuccess;
 
@@ -79,17 +93,17 @@ class Transaction {
 		/** @private */
 		this.hasCacheMissed = false
 
+		/** @private */
+		this.namespace = namespace
+
 		/**
 		 * The roots that this client has access to.
 		 * @type {{string: Ref}}
 		 */
-		this.roots = connection.roots
+		this.roots = roots
 
 		/** @private */
 		this.fn = txnFn
-
-		/** @private */
-		this.connection = connection
 
 		/** @private */
 		this.parentCache = parentCache
@@ -147,7 +161,7 @@ class Transaction {
 	 */
 	create(value, refs = []) {
 		value = toArrayBuffer(value)
-		const newId = this.connection.getNewObjectId()
+		const newId = getNewObjectId(this.namespace)
 		const cacheEntry = this.cache.get(newId)
 		cacheEntry.create(value, refs)
 		return new Ref(new Uint8Array(newId), true, true)
@@ -173,15 +187,17 @@ class Transaction {
 	 *
 	 * If a nested transaction fails, its modifications will not be seen by the parent transaction.
 	 *
-	 * @param {function} fn the transaction function.  This function may be run multiple times and should rethrow any TransactionRetryNeeded exceptions.
-	 * @returns {Promise&lt;*, Error&gt;} a promise that resolves to the result of the transaction function once the transaction submits or an error if it cannot.
+	 * @param {function} fn the transaction function.  This function may be run multiple times and should rethrow any
+	 * 							TransactionRetryNeeded exceptions.
+	 * @returns {Promise&lt;*, Error&gt;} a promise that resolves to the result of the transaction function once the transaction
+	 * 							submits or an error if it cannot.
 	 */
 	transact(fn) {
 		if (fn instanceof Function === false) {
 			throw new TypeError(&quot;Transaction argument must be a function.&quot;)
 		}
-		const nestedTransaction = new Transaction(this.connection, fn, this.onSuccess, this.onFail, this.cache)
-		this.connection.currentTransaction = nestedTransaction
+		// txnFn, {onSuccess, onFail}, roots, namespace, parentCache
+		const nestedTransaction = new Transaction(fn, {onSuccess: this.onSuccess, onFail: this.onFail}, this.roots, this.namespace, this.cache)
 		let resultPromise = undefined
 		try {
 			resultPromise = Promise.resolve(fn(nestedTransaction))
@@ -189,13 +205,11 @@ class Transaction {
 			if (e instanceof TransactionRetryNeeded) {
 				this.shouldRetry = true
 			}
-			this.connection.currentTransaction = this
 			throw e
 		}
 
 		return resultPromise
 			.then((result) =&gt; {
-				this.connection.currentTransaction = this
 				nestedTransaction.promoteCache(undefined)
 				return result
 			})
@@ -230,7 +244,7 @@ class Transaction {
 			filter = justCacheMisses
 		}
 
-		const actions = this.cache.getActions(this.connection.namespace, filter)
+		const actions = this.cache.getActions(this.namespace, filter)
 		return {
 			ClientTxnSubmission: {
 				Id: txnId,
