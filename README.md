@@ -12,7 +12,7 @@ Dev only links:
 Run a goshawkdb server with the config found in `example/env`.  See the [goshawkdb documentation](https://goshawkdb.io/documentation.html).
 
 When running in the browser, you'll need to import the certificates for your user.  You can 
-test that you've done this correctly by going to [https://localhost:9999/ws](https://localhost:9999/).  
+test that you've done this correctly by going to [https://localhost:7895/ws](https://localhost:7895/).  
 If it's working, it will say 'GoshawkDB Server version dev. Websocket available at /ws'.
 
 To see the web example
@@ -83,7 +83,7 @@ JFKaKVqAWufHF0RQXEQdUX90yZfiWK/XgQ==
 -----END EC PRIVATE KEY-----`
 }
 
-goshawkdb.connect("wss://localhost:9999/ws", connectionOptions).then((connection) => {
+goshawkdb.connect("wss://localhost:7895/ws", connectionOptions).then((connection) => {
 
     // this is where your goshawkdb code goes
 
@@ -95,7 +95,7 @@ goshawkdb.connect("wss://localhost:9999/ws", connectionOptions).then((connection
 The configuration of keys and certificates must be done in whatever way your browser
 and operating system support.
 
-Check that it has worked by navigating to [https://localhost:9999/](https://localhost:9999/).
+Check that it has worked by navigating to [https://localhost:7895/](https://localhost:7895/).
 If it's working, it will say 'GoshawkDB Server version dev. Websocket available at /ws'.
 
 Include the client:
@@ -110,7 +110,7 @@ It is regenerated on an `npm build`.
 Now include your code, e.g.
 
 ```js
-goshawksb.connect("wss://localhost:9999/ws").then((connection) => {
+goshawksb.connect("wss://localhost:7895/ws").then((connection) => {
   
     // this is where your goshawkdb code goes
 
