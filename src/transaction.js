@@ -6,16 +6,6 @@ const Uint64 = require('./uint64')
 /** @private */
 const nextNewObjectId = Uint64.from(0, 0, 0, 0, 0, 0, 0, 0)
 
-/** @private
- * Gets the object id to use for the next `txn.create` and increments the counter.
- * @returns {Uint8Array}
- */
-function getNewObjectId(namespace) {
-	const objId = nextNewObjectId.concat(namespace)
-	nextNewObjectId.inc()
-	return new Uint8Array(objId)
-}
-
 /**
  * A transaction represents an attempt to make a modification to the database.
  *
@@ -109,7 +99,7 @@ class Transaction {
 	 */
 	create(value, refs = []) {
 		value = toArrayBuffer(value)
-		const newId = getNewObjectId(this.namespace)
+		const newId = this.getNewObjectId()
 		const cacheEntry = this.cache.get(newId)
 		cacheEntry.create(value, refs)
 		return new Ref(new Uint8Array(newId), true, true)
@@ -164,6 +154,17 @@ class Transaction {
 	}
 
 	// private API
+
+	/** @private
+	 * Gets the object id to use for the next `txn.create` and increments the counter.
+	 * @returns {Uint8Array}
+	 */
+	getNewObjectId() {
+		const objId = nextNewObjectId.concat(this.namespace)
+		nextNewObjectId.inc()
+		return new Uint8Array(objId)
+	}
+
 
 	/** @private
 	 * Prepares this transaction to be run again.*/
